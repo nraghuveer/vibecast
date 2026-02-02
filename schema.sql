@@ -21,6 +21,7 @@ END;
 -- Conversations table: Stores conversation metadata and index
 CREATE TABLE IF NOT EXISTS conversations (
     id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
     topic TEXT NOT NULL,
     persona TEXT NOT NULL,
     voice_id TEXT NOT NULL,

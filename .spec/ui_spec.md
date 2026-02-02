@@ -49,7 +49,7 @@ The entry point of the application displaying the logo and main menu.
 | Option                    | Description                                      |
 |---------------------------|--------------------------------------------------|
 | Create new conversation   | Start a new conversation with custom topic/persona |
-| Continue conversation     | Resume a previous conversation (TODO)            |
+| Continue conversation     | Resume a previous conversation                   |
 | Quick start with preset   | Use a predefined topic/persona template          |
 | Create new template       | Create and save a new template                   |
 
@@ -61,61 +61,111 @@ The entry point of the application displaying the logo and main menu.
 
 ---
 
-### 2. Topic Input Screen
+### 2. New Conversation Screen
 
-Text input for specifying the podcast topic.
+A single unified screen for creating a new conversation with all required fields.
 
 **Visual Layout:**
 ```
 ┌─────────────────────────────────────────────────────────┐
-│ What's your podcast topic?                              │
-│ Enter the main topic or theme for your podcast episode  │
-│                                                         │
-│ e.g., The future of artificial intelligence             │
-│                                                         │
-│ Enter to continue | Ctrl+C to quit                      │
+│ Create New Conversation                                  │
+│ Fill in the details below to start your podcast          │
+│ conversation                                             │
+│                                                          │
+│   Started: Jan 02, 2026 3:04 PM                          │
+│                                                          │
+│ > Title                                                  │
+│   [e.g., AI Future Discussion, Tech Deep Dive...]        │
+│                                                          │
+│   Topic                                                  │
+│   [e.g., The future of artificial intelligence]          │
+│                                                          │
+│   Persona                                                │
+│   [e.g., tech entrepreneur, scientist, chef]             │
+│                                                          │
+│   Provider                                               │
+│   [groq (llama-3.3-70b)] [openai (gpt-4o)]               │
+│                                                          │
+│ Tab/↓ next • Shift+Tab/↑ prev • ←/→ provider • Enter    │
+│ continue • Esc back                                      │
 └─────────────────────────────────────────────────────────┘
 ```
 
-**Input Constraints:**
-- Character limit: 200
-- Width: 50 characters
-- Placeholder: "e.g., The future of artificial intelligence"
+**Fields:**
+| Field     | Description                                        |
+|-----------|----------------------------------------------------|
+| Started   | Auto-detected timestamp (read-only display)        |
+| Title     | Name for the conversation (max 100 chars)          |
+| Topic     | Main topic or theme for the podcast (max 200 chars)|
+| Persona   | AI guest persona description (max 100 chars)       |
+| Provider  | AI provider selection from configured providers    |
 
 **Key Bindings:**
-- `Enter` - Submit topic (if not empty)
+- `Tab` / `↓` - Move to next field
+- `Shift+Tab` / `↑` - Move to previous field
+- `←` / `→` - Select provider (when on provider field)
+- `Enter` - Submit form (when on provider field) or move to next field
+- `Esc` - Go back to welcome screen
 - `Ctrl+C` - Quit application
 
 ---
 
-### 3. Persona Input Screen
+### 3. Conversation List Screen
 
-Text input for describing the AI guest persona.
+Displays a list of existing conversations for continuation.
 
 **Visual Layout:**
 ```
 ┌─────────────────────────────────────────────────────────┐
-│ Who is your AI guest?                                   │
-│ Describe the persona of your AI podcast guest           │
-│ This shapes how they respond and what expertise they    │
-│ bring                                                   │
-│                                                         │
-│ Examples: tech expert, fitness coach, history           │
-│ professor, startup founder                              │
-│                                                         │
-│ e.g., tech entrepreneur, celebrity chef, scientist      │
-│                                                         │
-│ Enter to continue | Ctrl+C to quit                      │
+│ Continue Conversation                                    │
+│ Select a conversation to continue                        │
+│                                                          │
+│ > AI Future Discussion                                   │
+│      Jan 02, 2026 3:04 PM                                │
+│                                                          │
+│   Tech Deep Dive                                         │
+│      Jan 01, 2026 10:30 AM                               │
+│                                                          │
+│   Cooking Show Interview                                 │
+│      Dec 31, 2025 2:15 PM                                │
+│                                                          │
+│ ↑/↓ or j/k navigate | Enter select | Ctrl+I show        │
+│ details | Esc back                                       │
 └─────────────────────────────────────────────────────────┘
 ```
 
-**Input Constraints:**
-- Character limit: 100
-- Width: 50 characters
-- Placeholder: "e.g., tech entrepreneur, celebrity chef, scientist"
+**With Details (Ctrl+I toggled):**
+```
+┌─────────────────────────────────────────────────────────┐
+│ Continue Conversation                                    │
+│ Select a conversation to continue                        │
+│                                                          │
+│ > AI Future Discussion                                   │
+│      Jan 02, 2026 3:04 PM                                │
+│      Topic: The future of artificial intelligence        │
+│      Persona: Silicon Valley tech founder                │
+│                                                          │
+│   Tech Deep Dive                                         │
+│      Jan 01, 2026 10:30 AM                               │
+│      Topic: Building scalable systems                    │
+│      Persona: Software architect                         │
+│                                                          │
+│ ↑/↓ or j/k navigate | Enter select | Ctrl+I hide        │
+│ details | Esc back                                       │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Display:**
+- Title displayed in **Primary color** (purple, bold)
+- Timestamp displayed in **Muted color** (gray)
+- Topic and Persona shown only when Ctrl+I is toggled on
 
 **Key Bindings:**
-- `Enter` - Submit persona (if not empty)
+- `↑` / `k` - Move cursor up
+- `↓` / `j` - Move cursor down
+- `Enter` - Select conversation to continue
+- `Ctrl+I` - Toggle topic/persona details visibility
+- `Esc` - Go back to welcome screen
 - `Ctrl+C` - Quit application
 
 ---
@@ -229,44 +279,54 @@ Text input for naming a new custom template.
 
 ### 7. Conversation Screen
 
-The main chat interface for the podcast conversation with split layout.
+The main chat interface for the podcast conversation.
 
 **Visual Layout:**
 ```
-┌─────────────────────────────┬──────────────────────────┐
-│  VibeCast - [Topic]...  │  Transcript             │
-├─────────────────────────────┼──────────────────────────┤
-│                         │ HOST: [message]        │
-│   ▄▀▄▀▄▀▄▀▄▀▄▀▄     │                       │
-│  ▄▀▄▀▄▀▄▀▄▀▄▀▄▀▄      │ GUEST: [message]      │
-│   ▀▄▀▄▀▄▀▄▀▄▀▄▀▄       │                       │
-│  ▄▀▄▀▄▀▄▀▄▀▄▀▄▀▄       │ HOST: [message]        │
-│   ▀▄▀▄▀▄▀▄▀▄▀▄▀        │                       │
-│                         │ GUEST: [streaming▌]   │
-├─────────────────────────────┼──────────────────────────┤
-│ Type your message...      │                       │
-│ Ctrl+T toggle | q quit │                       │
-└─────────────────────────────┴──────────────────────────┘
+ ╦  ╦╦╔╗ ╔═╗╔═╗╔═╗╔═╗╔╦╗
+ ╚╗╔╝║╠╩╗║╣ ║  ╠═╣╚═╗ ║
+  ╚╝ ╩╚═╝╚═╝╚═╝╩ ╩╚═╝ ╩
+
+  HOST   Hello, welcome to the show!
+
+  GUEST  Thank you for having me! I'm excited to
+         discuss...▌
+
+  ·········█▓░·
+
+  Type your message...
+  Enter to send | Ctrl+I show details | q or Ctrl+C to exit
+```
+
+**With Details (Ctrl+I toggled):**
+```
+ ╦  ╦╦╔╗ ╔═╗╔═╗╔═╗╔═╗╔╦╗
+ ╚╗╔╝║╠╩╗║╣ ║  ╠═╣╚═╗ ║
+  ╚╝ ╩╚═╝╚═╝╚═╝╩ ╩╚═╝ ╩
+
+  Topic: The future of artificial intelligence
+  Persona: Silicon Valley tech founder
+
+  HOST   Hello, welcome to the show!
+
+  GUEST  Thank you for having me!▌
+
+  Type your message...
+  Enter to send | Ctrl+I hide details | q or Ctrl+C to exit
 ```
 
 **Features:**
-- Split layout with configurable transcript panel (left/right)
-- Analog wave visualization in main area
-  - Animated sine wave using Unicode characters (▀, ▄, ░)
-  - Low frequency (0.05) when idle
-  - High frequency (0.15) when guest is speaking
-  - Configurable amplitude and phase parameters
 - Streaming text animation (character-by-character at 50ms intervals)
-- Thinking indicator (`●●●`) while generating response
+- Flowing dots animation while generating response
 - Typing cursor (`▌`) during response streaming
 - Simple transcript format: `HOST:` / `GUEST:` labels in accent colors
-- Transcript panel toggle visibility with Ctrl+T
+- Toggle topic/persona details with Ctrl+I
 
 **Key Bindings:**
 - `Enter` - Send message (when not empty and guest not speaking)
-- `Ctrl+T` - Toggle transcript panel visibility
-- `q` - End conversation and show transcript (when input is empty)
-- `Ctrl+C` - End conversation and show transcript
+- `Ctrl+I` - Toggle topic/persona details visibility
+- `q` - End conversation and exit (when input is empty)
+- `Ctrl+C` - End conversation and exit
 
 ---
 
@@ -311,14 +371,10 @@ Welcome Screen
     ├─> [Select "Create new conversation"]
     │
     ▼
-Topic Input Screen
+New Conversation Screen (single screen with all fields)
     │
-    ├─> [Enter topic + Enter]
-    │
-    ▼
-Persona Input Screen
-    │
-    ├─> [Enter persona + Enter]
+    ├─> [Enter title, topic, persona, select provider]
+    ├─> [Press Enter on provider field]
     │
     ▼
 Voice Selection Screen
@@ -332,15 +388,35 @@ Conversation Screen
     ├─> [Press q or Ctrl+C]
     │
     ▼
-Transcript Screen
+Exit
+```
+
+### Flow 2: Continue Conversation
+
+```
+Welcome Screen
     │
-    ├─> [Any key]
+    ├─> [Select "Continue conversation"]
+    │
+    ▼
+Conversation List Screen
+    │
+    ├─> [Browse conversations, Ctrl+I to see details]
+    ├─> [Select conversation + Enter]
+    │       OR
+    ├─> [Esc] ─────────────────────┐
+    │                              │
+    ▼                              ▼
+Conversation Screen          Welcome Screen
+    │
+    ├─> [Resume chat with AI guest]
+    ├─> [Press q or Ctrl+C]
     │
     ▼
 Exit
 ```
 
-### Flow 2: Quick Start with Preset
+### Flow 3: Quick Start with Preset
 
 ```
 Welcome Screen
@@ -360,21 +436,21 @@ Voice Selection Screen      Welcome Screen
     ├─> [Select voice + Enter]
     │
     ▼
+Provider Selection Screen
+    │
+    ├─> [Select provider + Enter]
+    │
+    ▼
 Conversation Screen
     │
     ├─> [Chat with AI guest]
     ├─> [Press q or Ctrl+C]
     │
     ▼
-Transcript Screen
-    │
-    ├─> [Any key]
-    │
-    ▼
 Exit
 ```
 
-### Flow 3: Create New Template
+### Flow 4: Create New Template
 
 ```
 Welcome Screen
@@ -405,23 +481,24 @@ Persona Input Screen
 Welcome Screen
 ```
 
-### Flow 4: Continue Conversation (TODO)
-
-```
-Welcome Screen
-    │
-    ├─> [Select "Continue conversation"]
-    │
-    ▼
-[Future: Conversation List Screen]
-    │
-    ▼
-[Currently redirects to Topic Input Screen]
-```
-
 ---
 
 ## Data Models
+
+### Conversation
+```go
+type Conversation struct {
+    ID        string     // Unique identifier
+    Title     string     // Display name for the conversation
+    Topic     string     // Podcast topic
+    Persona   string     // AI guest persona
+    VoiceID   string     // Selected voice ID
+    VoiceName string     // Selected voice name
+    Provider  string     // AI provider name
+    CreatedAt time.Time  // Started timestamp
+    EndedAt   *time.Time // Ended timestamp (nullable)
+}
+```
 
 ### Template
 ```go
@@ -466,43 +543,65 @@ type Message struct {
     ┌───────────────┼───────────────┬───────────────┐                      │
     │               │               │               │                      │
     ▼               ▼               ▼               ▼                      │
-┌───────┐     ┌─────────┐     ┌──────────┐   ┌──────────────┐              │
-│ Topic │     │ Topic   │     │  Preset  │   │ TemplateName │              │
-│(new)  │     │(continue)│    │ Selection│   │    Input     │              │
-└───────┘     └─────────┘     └──────────┘   └──────────────┘              │
+┌───────────┐ ┌─────────────┐ ┌──────────┐   ┌──────────────┐              │
+│    New    │ │Conversation │ │  Preset  │   │ TemplateName │              │
+│Conversation│ │    List    │ │ Selection│   │    Input     │              │
+└───────────┘ └─────────────┘ └──────────┘   └──────────────┘              │
     │               │               │               │                      │
-    ▼               ▼               │               ▼                      │
-┌─────────┐   ┌─────────┐           │         ┌───────────┐                │
-│ Persona │   │ Persona │           │         │   Topic   │                │
-└─────────┘   └─────────┘           │         │ (template)│                │
-    │               │               │         └───────────┘                │
-    ▼               ▼               │               │                      │
-┌─────────┐   ┌─────────┐           │               ▼                      │
-│  Voice  │   │  Voice  │◄──────────┘         ┌───────────┐                │
-└─────────┘   └─────────┘                     │  Persona  │                │
-    │               │                         │ (template)│                │
-    ▼               ▼                         └───────────┘                │
-┌──────────────────────────┐                        │                      │
-│      Conversation        │                        │ [Save Template]      │
-└──────────────────────────┘                        │                      │
-    │                                               └──────────────────────┘
-    ▼
-┌──────────────────────────┐
-│       Transcript         │
-└──────────────────────────┘
-    │
-    ▼
-  [Exit]
+    ▼               │               │               ▼                      │
+┌─────────┐         │               │         ┌───────────┐                │
+│  Voice  │◄────────┘               │         │   Topic   │                │
+└─────────┘                         │         │ (template)│                │
+    │                               │         └───────────┘                │
+    ▼                               │               │                      │
+┌──────────────────────────┐        │               ▼                      │
+│      Conversation        │◄───────┤         ┌───────────┐                │
+│  (shows title in header) │        │         │  Persona  │                │
+└──────────────────────────┘        │         │ (template)│                │
+    │                               │         └───────────┘                │
+    ▼                               │               │                      │
+  [Exit]                            │               │ [Save Template]      │
+                                    │               └──────────────────────┘
+                                    │
+                               ┌─────────┐
+                               │  Voice  │
+                               └─────────┘
+                                    │
+                                    ▼
+                               ┌─────────┐
+                               │Provider │
+                               └─────────┘
+                                    │
+                                    ▼
+                            ┌──────────────┐
+                            │ Conversation │
+                            └──────────────┘
 ```
+
+---
+
+## Keyboard Shortcuts Summary
+
+| Shortcut    | Context              | Action                           |
+|-------------|----------------------|----------------------------------|
+| `↑` / `k`   | Lists, Forms         | Navigate up / Previous field     |
+| `↓` / `j`   | Lists, Forms         | Navigate down / Next field       |
+| `Tab`       | New Conversation     | Next field                       |
+| `Shift+Tab` | New Conversation     | Previous field                   |
+| `←` / `→`   | New Conversation     | Select provider                  |
+| `Enter`     | All screens          | Confirm / Submit                 |
+| `Esc`       | Sub-screens          | Go back to previous screen       |
+| `Ctrl+I`    | List & Conversation  | Toggle topic/persona details     |
+| `q`         | Conversation         | Exit (when input empty)          |
+| `Ctrl+C`    | All screens          | Quit application                 |
 
 ---
 
 ## Future Enhancements
 
-1. **Continue Conversation** - Implement conversation persistence and list screen
-2. **Template Management** - Edit/delete existing templates
-3. **Template Persistence** - Save templates to file system
-4. **Conversation Export** - Export transcript to file
-5. **Audio Playback** - Integrate with TTS for actual voice output
-6. **Keyboard Shortcuts** - Add more navigation shortcuts
-7. **Theme Support** - Light/dark mode toggle
+1. **Template Management** - Edit/delete existing templates
+2. **Template Persistence** - Save templates to file system
+3. **Conversation Export** - Export transcript to file
+4. **Audio Playback** - Integrate with TTS for actual voice output
+5. **Theme Support** - Light/dark mode toggle
+6. **Search** - Search conversations by title, topic, or content

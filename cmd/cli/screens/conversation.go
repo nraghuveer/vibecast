@@ -30,6 +30,7 @@ type ConversationModel struct {
 	messages      []Message
 	width         int
 	height        int
+	title         string
 	topic         string
 	persona       string
 	voice         mock.Voice
@@ -39,11 +40,20 @@ type ConversationModel struct {
 	fullResponse  string
 	streamIndex   int
 	id            string
-	dotFrame      int // For flowing dots animation
+	dotFrame      int  // For flowing dots animation
+	showDetails   bool // Toggle for showing topic/persona (Ctrl+I)
+	inputMode     string
+	isMuted       bool
+	sttDraft      string
 }
 
-// NewConversationModel creates a new conversation screen model
+// NewConversationModel creates a new conversation screen model (for backward compatibility)
 func NewConversationModel(topic, persona string, voice mock.Voice, provider string, width, height int) ConversationModel {
+	return NewConversationModelWithTitle("", topic, persona, voice, provider, width, height)
+}
+
+// NewConversationModelWithTitle creates a new conversation screen model with a title
+func NewConversationModelWithTitle(title, topic, persona string, voice mock.Voice, provider string, width, height int) ConversationModel {
 	ti := textinput.New()
 	ti.Placeholder = "Type your message..."
 	ti.Focus()
@@ -54,8 +64,14 @@ func NewConversationModel(topic, persona string, voice mock.Voice, provider stri
 	storage.CreateConversationDir(conversationID)
 	storage.CreateTranscript(conversationID)
 
+	// Auto-generate title if not provided
+	if title == "" {
+		title = "Conversation"
+	}
+
 	conv := models.Conversation{
 		ID:        conversationID,
+		Title:     title,
 		Topic:     topic,
 		Persona:   persona,
 		VoiceID:   voice.ID,
@@ -66,16 +82,21 @@ func NewConversationModel(topic, persona string, voice mock.Voice, provider stri
 	db.CreateConversation(conv)
 
 	return ConversationModel{
-		textInput: ti,
-		messages:  []Message{},
-		width:     width,
-		height:    height,
-		topic:     topic,
-		persona:   persona,
-		voice:     voice,
-		provider:  provider,
-		id:        conversationID,
-		dotFrame:  0,
+		textInput:   ti,
+		messages:    []Message{},
+		width:       width,
+		height:      height,
+		title:       title,
+		topic:       topic,
+		persona:     persona,
+		voice:       voice,
+		provider:    provider,
+		id:          conversationID,
+		dotFrame:    0,
+		showDetails: false,
+		inputMode:   "text",
+		isMuted:     false,
+		sttDraft:    "",
 	}
 }
 
@@ -96,6 +117,12 @@ type DotAnimationMsg struct{}
 
 // ResponseCompleteMsg signals the response is done streaming
 type ResponseCompleteMsg struct{}
+
+// SttDraftMsg updates the live speech-to-text draft text.
+// Future STT streaming should emit this message with partial transcripts.
+type SttDraftMsg struct {
+	Text string
+}
 
 func (m ConversationModel) startGuestResponse(isFirst bool) tea.Cmd {
 	return func() tea.Msg {
@@ -151,11 +178,40 @@ func (m ConversationModel) Update(msg tea.Msg) (ConversationModel, tea.Cmd) {
 		}
 		return m, nil
 
+	case SttDraftMsg:
+		if m.inputMode == "voice" {
+			m.sttDraft = msg.Text
+			return m, nil
+		}
+
 	case tea.KeyMsg:
 		switch {
+		case m.showDetails && key.Matches(msg, key.NewBinding(key.WithKeys("esc"))):
+			m.showDetails = false
+			return m, nil
+		case m.showDetails && key.Matches(msg, key.NewBinding(key.WithKeys("x"))):
+			m.showDetails = false
+			return m, nil
+		case key.Matches(msg, key.NewBinding(key.WithKeys("tab"))):
+			if m.inputMode == "text" {
+				m.inputMode = "voice"
+				m.textInput.Blur()
+			} else {
+				m.inputMode = "text"
+				m.textInput.Focus()
+			}
+			return m, nil
+		case key.Matches(msg, key.NewBinding(key.WithKeys("m"))):
+			if m.inputMode == "voice" {
+				m.isMuted = !m.isMuted
+				return m, nil
+			}
 		case key.Matches(msg, key.NewBinding(key.WithKeys("ctrl+c"))):
 			m.EndConversation()
 			return m, tea.Quit
+		case key.Matches(msg, key.NewBinding(key.WithKeys("ctrl+i"))):
+			m.showDetails = !m.showDetails
+			return m, nil
 		case key.Matches(msg, key.NewBinding(key.WithKeys("q"))):
 			if !m.isTyping && m.textInput.Value() == "" {
 				m.EndConversation()
@@ -184,7 +240,10 @@ func (m ConversationModel) Update(msg tea.Msg) (ConversationModel, tea.Cmd) {
 		}
 	}
 
-	if !m.isTyping {
+	if m.showDetails {
+		return m, nil
+	}
+	if !m.isTyping && m.inputMode == "text" {
 		m.textInput, cmd = m.textInput.Update(msg)
 	}
 	return m, cmd
@@ -216,7 +275,7 @@ func init() {
 
 func preRenderAnimationFrames() []string {
 	trackWidth := 10
-	maxHeadPos := trackWidth - 3 // head can go from 0 to 7 (leaves room for 3-block snake)
+	maxHeadPos := trackWidth - 3  // head can go from 0 to 7 (leaves room for 3-block snake)
 	cycleLength := maxHeadPos * 2 // 14 frames: 0->7 then 7->0
 
 	// Styles for rendering
@@ -282,12 +341,13 @@ func (m ConversationModel) renderConversation() string {
 	// Fixed heights for bottom elements
 	logoHeight := 3
 	inputHeight := 1
+	inputMetaHeight := 1
 	animationHeight := 1
 	helpHeight := 1
 	padding := 4 // spacing between elements
 
 	// Calculate transcript height to fill remaining space
-	bottomHeight := inputHeight + helpHeight + padding
+	bottomHeight := inputHeight + inputMetaHeight + helpHeight + padding
 	if m.isTyping {
 		bottomHeight += animationHeight + 1
 	}
@@ -322,14 +382,40 @@ func (m ConversationModel) renderConversation() string {
 		Height(transcriptHeight).
 		Render(transcriptContent)
 
-	// Input area (full width)
-	inputArea := "  " + m.textInput.View()
+	// Input area (left column)
+	var inputArea string
+	if m.inputMode == "voice" {
+		muteLabel := "[ON]"
+		if m.isMuted {
+			muteLabel = "[MUTE]"
+		}
+		muteStyle := lipgloss.NewStyle().Foreground(styles.MutedColor)
+		placeholder := m.sttDraft
+		if strings.TrimSpace(placeholder) == "" {
+			placeholder = "Listening for speech..."
+		}
+		voiceBlockStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
+		inputArea = fmt.Sprintf("  %s %s", muteStyle.Render(muteLabel), voiceBlockStyle.Render(placeholder))
+	} else {
+		inputArea = "  " + m.textInput.View()
+	}
+
+	modeStyle := lipgloss.NewStyle().Foreground(styles.PrimaryColor).Bold(true)
+	providerStyle := lipgloss.NewStyle().Foreground(styles.MutedColor)
+	modeMeta := fmt.Sprintf("%s %s", modeStyle.Render(strings.ToUpper(m.inputMode)), providerStyle.Render(m.provider))
+	metaLine := fmt.Sprintf("  %s", modeMeta)
 
 	// Help text
-	help := styles.HelpStyle.Render("  Enter to send | q or Ctrl+C to exit")
+	help := styles.HelpStyle.Render("  Tab toggle input | m mute | Enter to send | Ctrl+I details | q or Ctrl+C to exit")
 
 	// Build bottom section: input first, then animation below (both anchored to bottom)
 	var bottomSection string
+	inputLine := inputArea
+	inputColumn := lipgloss.JoinVertical(
+		lipgloss.Left,
+		inputLine,
+		metaLine,
+	)
 	if m.isTyping {
 		dotsAnimation := m.renderFlowingDots()
 		animStyle := lipgloss.NewStyle().PaddingLeft(2)
@@ -337,14 +423,14 @@ func (m ConversationModel) renderConversation() string {
 
 		bottomSection = lipgloss.JoinVertical(
 			lipgloss.Left,
-			inputArea,
+			inputColumn,
 			animationArea,
 			help,
 		)
 	} else {
 		bottomSection = lipgloss.JoinVertical(
 			lipgloss.Left,
-			inputArea,
+			inputColumn,
 			help,
 		)
 	}
@@ -359,7 +445,43 @@ func (m ConversationModel) renderConversation() string {
 		bottomSection,
 	)
 
+	if m.showDetails {
+		return m.renderDetailsPopup()
+	}
 	return content
+}
+
+func (m ConversationModel) renderDetailsPopup() string {
+	popupWidth := 60
+	if m.width > 0 && popupWidth > m.width-6 {
+		popupWidth = m.width - 6
+	}
+	if popupWidth < 28 {
+		popupWidth = 28
+	}
+
+	mutedStyle := lipgloss.NewStyle().Foreground(styles.MutedColor)
+	textStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
+	labelStyle := lipgloss.NewStyle().Foreground(styles.PrimaryColor).Bold(true)
+
+	header := fmt.Sprintf("%s %s", labelStyle.Render("Details"), mutedStyle.Render("[x]"))
+	body := lipgloss.JoinVertical(
+		lipgloss.Left,
+		header,
+		"",
+		fmt.Sprintf("%s %s", mutedStyle.Render("Topic:"), textStyle.Render(m.topic)),
+		fmt.Sprintf("%s %s", mutedStyle.Render("Persona:"), textStyle.Render(m.persona)),
+		"",
+		mutedStyle.Render("Esc or x to close"),
+	)
+
+	popup := lipgloss.NewStyle().
+		Width(popupWidth).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(styles.PrimaryColor).
+		Padding(1, 2).
+		Render(body)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, popup, lipgloss.WithWhitespaceChars(" "))
 }
 
 // Messages returns all conversation messages

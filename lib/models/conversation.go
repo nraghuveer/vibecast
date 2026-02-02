@@ -4,6 +4,7 @@ import "time"
 
 type Conversation struct {
 	ID        string
+	Title     string
 	Topic     string
 	Persona   string
 	VoiceID   string

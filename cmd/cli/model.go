@@ -11,6 +11,8 @@ type Screen int
 
 const (
 	ScreenWelcome Screen = iota
+	ScreenNewConversation
+	ScreenConversationList
 	ScreenTopic
 	ScreenPersona
 	ScreenVoice
@@ -24,17 +26,20 @@ const (
 
 // Model is the main application model
 type Model struct {
-	screen       Screen
-	welcome      screens.WelcomeModel
-	topic        screens.TopicModel
-	persona      screens.PersonaModel
-	voice        screens.VoiceModel
-	provider     screens.ProviderModel
-	conversation screens.ConversationModel
-	preset       screens.PresetModel
-	templateName screens.TemplateNameModel
+	screen           Screen
+	welcome          screens.WelcomeModel
+	newConversation  screens.CreateConversationModel
+	conversationList screens.ConversationListModel
+	topic            screens.TopicModel
+	persona          screens.PersonaModel
+	voice            screens.VoiceModel
+	provider         screens.ProviderModel
+	conversation     screens.ConversationModel
+	preset           screens.PresetModel
+	templateName     screens.TemplateNameModel
 
 	// Collected data
+	selectedTitle    string
 	selectedTopic    string
 	selectedPersona  string
 	selectedVoice    mock.Voice
@@ -77,6 +82,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.screen {
 	case ScreenWelcome:
 		return m.updateWelcome(msg)
+	case ScreenNewConversation:
+		return m.updateNewConversation(msg)
+	case ScreenConversationList:
+		return m.updateConversationList(msg)
 	case ScreenTopic:
 		return m.updateTopic(msg)
 	case ScreenPersona:
@@ -108,14 +117,13 @@ func (m Model) updateWelcome(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if wsm, ok := msg.(screens.WelcomeOptionSelectedMsg); ok {
 		switch wsm.Option {
 		case screens.OptionNewConversation:
-			m.screen = ScreenTopic
-			m.topic = screens.NewTopicModel()
-			return m, m.topic.Init()
+			m.screen = ScreenNewConversation
+			m.newConversation = screens.NewCreateConversationModel()
+			return m, m.newConversation.Init()
 		case screens.OptionContinueConversation:
-			// TODO: Show conversation list (for now, just go to topic)
-			m.screen = ScreenTopic
-			m.topic = screens.NewTopicModel()
-			return m, m.topic.Init()
+			m.screen = ScreenConversationList
+			m.conversationList = screens.NewConversationListModel()
+			return m, m.conversationList.Init()
 		case screens.OptionQuickStart:
 			m.screen = ScreenPreset
 			m.preset = screens.NewPresetModel()
@@ -125,6 +133,68 @@ func (m Model) updateWelcome(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.templateName = screens.NewTemplateNameModel()
 			return m, m.templateName.Init()
 		}
+	}
+
+	return m, cmd
+}
+
+func (m Model) updateNewConversation(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	m.newConversation, cmd = m.newConversation.Update(msg)
+
+	// Check for new conversation created
+	if ncm, ok := msg.(screens.NewConversationCreatedMsg); ok {
+		m.selectedTitle = ncm.Title
+		m.selectedTopic = ncm.Topic
+		m.selectedPersona = ncm.Persona
+		m.selectedProvider = ncm.Provider
+		m.screen = ScreenVoice
+		m.voice = screens.NewVoiceModel()
+		return m, m.voice.Init()
+	}
+
+	// Check for back navigation
+	if _, ok := msg.(screens.BackToWelcomeMsg); ok {
+		m.screen = ScreenWelcome
+		m.welcome = screens.NewWelcomeModel()
+		return m, m.welcome.Init()
+	}
+
+	return m, cmd
+}
+
+func (m Model) updateConversationList(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	m.conversationList, cmd = m.conversationList.Update(msg)
+
+	// Check for conversation selected
+	if csm, ok := msg.(screens.ConversationSelectedMsg); ok {
+		m.selectedTitle = csm.Conversation.Title
+		m.selectedTopic = csm.Conversation.Topic
+		m.selectedPersona = csm.Conversation.Persona
+		m.selectedProvider = csm.Conversation.Provider
+		m.selectedVoice = mock.Voice{
+			ID:   csm.Conversation.VoiceID,
+			Name: csm.Conversation.VoiceName,
+		}
+		m.screen = ScreenConversation
+		m.conversation = screens.NewConversationModelWithTitle(
+			m.selectedTitle,
+			m.selectedTopic,
+			m.selectedPersona,
+			m.selectedVoice,
+			m.selectedProvider,
+			m.width,
+			m.height,
+		)
+		return m, m.conversation.Init()
+	}
+
+	// Check for back navigation
+	if _, ok := msg.(screens.BackToWelcomeMsg); ok {
+		m.screen = ScreenWelcome
+		m.welcome = screens.NewWelcomeModel()
+		return m, m.welcome.Init()
 	}
 
 	return m, cmd
@@ -165,6 +235,23 @@ func (m Model) updateVoice(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Check for voice selection
 	if vsm, ok := msg.(screens.VoiceSelectedMsg); ok {
 		m.selectedVoice = vsm.Voice
+
+		// If provider is already selected (from NewConversation screen), go directly to conversation
+		if m.selectedProvider != "" {
+			m.screen = ScreenConversation
+			m.conversation = screens.NewConversationModelWithTitle(
+				m.selectedTitle,
+				m.selectedTopic,
+				m.selectedPersona,
+				m.selectedVoice,
+				m.selectedProvider,
+				m.width,
+				m.height,
+			)
+			return m, m.conversation.Init()
+		}
+
+		// Otherwise go to provider selection
 		m.screen = ScreenProvider
 		m.provider = screens.NewProviderModel()
 		return m, m.provider.Init()
@@ -180,7 +267,8 @@ func (m Model) updateProvider(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if psm, ok := msg.(screens.ProviderSelectedMsg); ok {
 		m.selectedProvider = psm.Provider
 		m.screen = ScreenConversation
-		m.conversation = screens.NewConversationModel(
+		m.conversation = screens.NewConversationModelWithTitle(
+			m.selectedTitle,
 			m.selectedTopic,
 			m.selectedPersona,
 			m.selectedVoice,
@@ -293,6 +381,10 @@ func (m Model) View() string {
 	switch m.screen {
 	case ScreenWelcome:
 		return m.welcome.View()
+	case ScreenNewConversation:
+		return m.newConversation.View()
+	case ScreenConversationList:
+		return m.conversationList.View()
 	case ScreenTopic, ScreenTemplateTopic:
 		return m.topic.View()
 	case ScreenPersona, ScreenTemplatePersona:

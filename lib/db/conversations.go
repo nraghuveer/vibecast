@@ -10,6 +10,7 @@ import (
 
 type Conversation struct {
 	ID        string
+	Title     string
 	Topic     string
 	Persona   string
 	VoiceID   string
@@ -21,11 +22,11 @@ type Conversation struct {
 
 func CreateConversation(c models.Conversation) error {
 	query := `
-		INSERT INTO conversations (id, topic, persona, voice_id, voice_name, provider, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO conversations (id, title, topic, persona, voice_id, voice_name, provider, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
-	_, err := db.Exec(query, c.ID, c.Topic, c.Persona, c.VoiceID, c.VoiceName, c.Provider, c.CreatedAt)
+	_, err := db.Exec(query, c.ID, c.Title, c.Topic, c.Persona, c.VoiceID, c.VoiceName, c.Provider, c.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("failed to create conversation: %w", err)
 	}
@@ -35,7 +36,7 @@ func CreateConversation(c models.Conversation) error {
 
 func GetConversation(id string) (*Conversation, error) {
 	query := `
-		SELECT id, topic, persona, voice_id, voice_name, provider, created_at, ended_at
+		SELECT id, title, topic, persona, voice_id, voice_name, provider, created_at, ended_at
 		FROM conversations
 		WHERE id = ?
 	`
@@ -43,6 +44,7 @@ func GetConversation(id string) (*Conversation, error) {
 	var c Conversation
 	err := db.QueryRow(query, id).Scan(
 		&c.ID,
+		&c.Title,
 		&c.Topic,
 		&c.Persona,
 		&c.VoiceID,
@@ -64,7 +66,7 @@ func GetConversation(id string) (*Conversation, error) {
 
 func GetAllConversations() ([]Conversation, error) {
 	query := `
-		SELECT id, topic, persona, voice_id, voice_name, provider, created_at, ended_at
+		SELECT id, title, topic, persona, voice_id, voice_name, provider, created_at, ended_at
 		FROM conversations
 		ORDER BY created_at DESC
 	`
@@ -80,6 +82,7 @@ func GetAllConversations() ([]Conversation, error) {
 		var c Conversation
 		err := rows.Scan(
 			&c.ID,
+			&c.Title,
 			&c.Topic,
 			&c.Persona,
 			&c.VoiceID,
