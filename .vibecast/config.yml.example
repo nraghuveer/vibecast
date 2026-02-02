@@ -1,0 +1,84 @@
+# VibeCast Configuration File
+# Default location: ~/.vibecast/config.yml
+# You can specify a custom path with: vibecast --config /path/to/config.yml
+
+general:
+  # Path to the SQLite database file
+  db_path: ~/.vibecast/data.sqlite
+
+ai:
+  # Provider for conversation/LLM operations
+  conversation_provider: groq
+
+  # Provider for speech-to-text (audio transcription)
+  speech_to_text: groq
+
+  # Provider for text-to-speech (audio generation)
+  text_to_speech: groq
+
+ui:
+  # Show transcripts panel during conversation
+  show_transcripts: true
+
+  # Position of transcripts panel (left or right)
+  transcript_side: right
+
+  # Width of transcripts panel in characters
+  transcript_width: 40
+
+  # Wave visualization settings for audio output
+  wave:
+    phase: 0              # Starting phase of the wave animation
+    frequency: 0.05        # Base frequency of the wave (increases when guest is speaking)
+    amplitude: 3           # Amplitude/sensitivity of the wave
+
+# Provider-specific configurations
+providers:
+  groq:
+    # Chat/LLM model for conversations
+    chat_model: llama-3.3-70b-versatile
+
+    # Speech-to-text model (audio transcription) - not currently supported by Groq
+    stt_model: ""
+
+    # Text-to-speech model (audio generation) - not currently supported by Groq
+    tts_model: ""
+
+    # Chat inference API endpoint
+    inference_url: https://api.groq.com/openai/v1/chat/completions
+
+    # Speech-to-text API endpoint (audio transcription)
+    stt_url: ""
+
+    # Text-to-speech API endpoint (audio generation)
+    tts_url: ""
+
+    # API key for authentication
+    # If is_env_var is true, the api_key field is ignored and API key is read from GROQ_API_KEY environment variable
+    # If is_env_var is false and api_key is empty, it will also try to read from GROQ_API_KEY environment variable
+    api_key: ""
+    is_env_var: true
+
+  openai:
+    # Chat/LLM model for conversations
+    chat_model: gpt-4o
+
+    # Speech-to-text model (audio transcription)
+    stt_model: whisper-1
+
+    # Text-to-speech model (audio generation)
+    tts_model: tts-1
+
+    # Chat inference API endpoint
+    inference_url: https://api.openai.com/v1/chat/completions
+
+    # Speech-to-text API endpoint (audio transcription)
+    stt_url: https://api.openai.com/v1/audio/transcriptions
+
+    # Text-to-speech API endpoint (audio generation)
+    tts_url: https://api.openai.com/v1/audio/speech
+
+    # API key for authentication
+    # If is_env_var is true, the api_key field is ignored and API key is read from OPENAI_API_KEY environment variable
+    api_key: ""
+    is_env_var: true
