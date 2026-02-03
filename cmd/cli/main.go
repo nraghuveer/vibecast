@@ -6,8 +6,8 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/nraghuveer/vibecast/cmd/cli/mock"
 	"github.com/nraghuveer/vibecast/lib/config"
+	"github.com/nraghuveer/vibecast/lib/data"
 	"github.com/nraghuveer/vibecast/lib/db"
 )
 
@@ -32,7 +32,7 @@ func main() {
 	}
 	defer db.Close()
 
-	mock.InitializeDefaultTemplates()
+	data.InitializeDefaultTemplates()
 
 	p := tea.NewProgram(
 		NewModel(),

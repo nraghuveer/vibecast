@@ -1,15 +1,8 @@
 package mock
 
-import (
-	"fmt"
+import "github.com/nraghuveer/vibecast/lib/models"
 
-	"github.com/nraghuveer/vibecast/lib/db"
-	"github.com/nraghuveer/vibecast/lib/models"
-)
-
-type Template = models.Template
-
-var defaultTemplates = []Template{
+var DefaultTemplates = []models.Template{
 	{
 		ID:      "tech-visionary",
 		Name:    "Tech Visionary",
@@ -40,66 +33,4 @@ var defaultTemplates = []Template{
 		Topic:   "World cuisines and stories behind food",
 		Persona: "A chef and food writer who has traveled the world exploring culinary traditions",
 	},
-}
-
-func InitializeDefaultTemplates() {
-	for _, t := range defaultTemplates {
-		exists, err := db.TemplateExists(t.ID)
-		if err == nil && !exists {
-			if err := db.CreateTemplate(t); err != nil {
-				fmt.Printf("Warning: failed to initialize default template %s: %v\n", t.ID, err)
-			}
-		}
-	}
-}
-
-func GetTemplates() []Template {
-	dbTemplates, err := db.GetAllTemplates()
-	if err != nil {
-		return defaultTemplates
-	}
-
-	templates := make([]Template, 0, len(dbTemplates))
-	for _, dt := range dbTemplates {
-		templates = append(templates, Template{
-			ID:      dt.ID,
-			Name:    dt.Name,
-			Topic:   dt.Topic,
-			Persona: dt.Persona,
-		})
-	}
-
-	return templates
-}
-
-func GetCustomTemplates() []Template {
-	all := GetTemplates()
-	custom := make([]Template, 0)
-
-	for _, t := range all {
-		isDefault := false
-		for _, dt := range defaultTemplates {
-			if t.ID == dt.ID {
-				isDefault = true
-				break
-			}
-		}
-		if !isDefault {
-			custom = append(custom, t)
-		}
-	}
-
-	return custom
-}
-
-func AddTemplate(t Template) error {
-	return db.CreateTemplate(t)
-}
-
-func UpdateTemplate(t Template) error {
-	return db.UpdateTemplate(t)
-}
-
-func DeleteTemplate(id string) error {
-	return db.DeleteTemplate(id)
 }

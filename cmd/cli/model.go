@@ -4,6 +4,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/nraghuveer/vibecast/cmd/cli/mock"
 	"github.com/nraghuveer/vibecast/cmd/cli/screens"
+	"github.com/nraghuveer/vibecast/lib/data"
+	"github.com/nraghuveer/vibecast/lib/models"
 )
 
 // Screen represents the current screen state
@@ -357,7 +359,7 @@ func (m Model) updateTemplatePersona(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.selectedPersona = psm.Persona
 
 		// Save the new template
-		mock.AddTemplate(mock.Template{
+		data.AddTemplate(models.Template{
 			ID:      m.newTemplateName,
 			Name:    m.newTemplateName,
 			Topic:   m.selectedTopic,
