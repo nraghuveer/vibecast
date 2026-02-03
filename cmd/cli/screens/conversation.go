@@ -47,11 +47,6 @@ type ConversationModel struct {
 	sttDraft      string
 }
 
-// NewConversationModel creates a new conversation screen model (for backward compatibility)
-func NewConversationModel(topic, persona string, voice mock.Voice, provider string, width, height int) ConversationModel {
-	return NewConversationModelWithTitle("", topic, persona, voice, provider, width, height)
-}
-
 // NewConversationModelWithTitle creates a new conversation screen model with a title
 func NewConversationModelWithTitle(title, topic, persona string, voice mock.Voice, provider string, width, height int) ConversationModel {
 	ti := textinput.New()

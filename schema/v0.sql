@@ -1,4 +1,4 @@
--- VibeCast Database Schema
+-- VibeCast Database Schema (v0)
 -- This file contains the SQL schema for the VibeCast application database
 
 -- Templates table: Stores predefined and custom templates
@@ -33,3 +33,7 @@ CREATE TABLE IF NOT EXISTS conversations (
 
 -- Enable foreign keys (if not already enabled)
 PRAGMA foreign_keys = ON;
+
+-- Indexes for better query performance
+CREATE INDEX IF NOT EXISTS idx_conversations_created_at ON conversations(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_conversations_topic ON conversations(topic);

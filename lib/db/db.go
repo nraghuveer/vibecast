@@ -34,44 +34,12 @@ func Init() error {
 }
 
 func createTables() error {
-	_, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS templates (
-			id TEXT PRIMARY KEY,
-			name TEXT NOT NULL,
-			topic TEXT NOT NULL,
-			persona TEXT NOT NULL,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		);
-	`)
+	schemaSQL, err := os.ReadFile("schema/v0.sql")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read schema file: %w", err)
 	}
 
-	_, err = db.Exec(`
-		CREATE TRIGGER IF NOT EXISTS update_templates_timestamp 
-		AFTER UPDATE ON templates
-		BEGIN
-			UPDATE templates SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
-		END;
-	`)
-	if err != nil {
-		return err
-	}
-
-	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS conversations (
-			id TEXT PRIMARY KEY,
-			topic TEXT NOT NULL,
-			persona TEXT NOT NULL,
-			voice_id TEXT NOT NULL,
-			voice_name TEXT NOT NULL,
-			provider TEXT NOT NULL,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			ended_at DATETIME
-		);
-	`)
-
+	_, err = db.Exec(string(schemaSQL))
 	return err
 }
 
