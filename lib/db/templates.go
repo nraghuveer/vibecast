@@ -16,7 +16,7 @@ type Template struct {
 	UpdatedAt time.Time
 }
 
-func CreateTemplate(t models.Template) error {
+func (db *DB) CreateTemplate(t models.Template) error {
 	query := `
 		INSERT INTO templates (id, name, topic, persona)
 		VALUES (?, ?, ?, ?)
@@ -35,7 +35,7 @@ func CreateTemplate(t models.Template) error {
 	return nil
 }
 
-func GetTemplate(id string) (*Template, error) {
+func (db *DB) GetTemplate(id string) (*Template, error) {
 	query := `
 		SELECT id, name, topic, persona, created_at, updated_at
 		FROM templates
@@ -59,7 +59,7 @@ func GetTemplate(id string) (*Template, error) {
 	return &t, nil
 }
 
-func GetAllTemplates() ([]Template, error) {
+func (db *DB) GetAllTemplates() ([]Template, error) {
 	query := `
 		SELECT id, name, topic, persona, created_at, updated_at
 		FROM templates
@@ -92,7 +92,7 @@ func GetAllTemplates() ([]Template, error) {
 	return templates, nil
 }
 
-func UpdateTemplate(t models.Template) error {
+func (db *DB) UpdateTemplate(t models.Template) error {
 	query := `
 		UPDATE templates
 		SET name = ?, topic = ?, persona = ?
@@ -116,7 +116,7 @@ func UpdateTemplate(t models.Template) error {
 	return nil
 }
 
-func DeleteTemplate(id string) error {
+func (db *DB) DeleteTemplate(id string) error {
 	query := `DELETE FROM templates WHERE id = ?`
 
 	result, err := db.Exec(query, id)
@@ -136,7 +136,7 @@ func DeleteTemplate(id string) error {
 	return nil
 }
 
-func DeleteAllTemplates() error {
+func (db *DB) DeleteAllTemplates() error {
 	query := `DELETE FROM templates`
 
 	_, err := db.Exec(query)
@@ -147,7 +147,7 @@ func DeleteAllTemplates() error {
 	return nil
 }
 
-func TemplateExists(id string) (bool, error) {
+func (db *DB) TemplateExists(id string) (bool, error) {
 	query := `SELECT COUNT(*) FROM templates WHERE id = ?`
 
 	var count int

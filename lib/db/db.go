@@ -10,30 +10,36 @@ import (
 	"github.com/nraghuveer/vibecast/lib/config"
 )
 
-var db *sql.DB
+// DB wraps sql.DB and provides database operations
+type DB struct {
+	*sql.DB
+}
 
-func Init() error {
+// NewDB creates and initializes a new database instance
+func NewDB() (*DB, error) {
 	dbPath := config.GetDBPath()
 
 	dbDir := filepath.Dir(dbPath)
 	if err := os.MkdirAll(dbDir, 0755); err != nil {
-		return fmt.Errorf("failed to create database directory: %w", err)
+		return nil, fmt.Errorf("failed to create database directory: %w", err)
 	}
 
-	var err error
-	db, err = sql.Open("sqlite3", dbPath+"?_foreign_keys=on")
+	sqlDB, err := sql.Open("sqlite3", dbPath+"?_foreign_keys=on")
 	if err != nil {
-		return fmt.Errorf("failed to open database: %w", err)
+		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	if err := createTables(); err != nil {
-		return fmt.Errorf("failed to create tables: %w", err)
+	db := &DB{DB: sqlDB}
+
+	if err := db.createTables(); err != nil {
+		sqlDB.Close()
+		return nil, fmt.Errorf("failed to create tables: %w", err)
 	}
 
-	return nil
+	return db, nil
 }
 
-func createTables() error {
+func (db *DB) createTables() error {
 	schemaSQL, err := os.ReadFile("schema/v0.sql")
 	if err != nil {
 		return fmt.Errorf("failed to read schema file: %w", err)
@@ -41,15 +47,4 @@ func createTables() error {
 
 	_, err = db.Exec(string(schemaSQL))
 	return err
-}
-
-func Close() error {
-	if db != nil {
-		return db.Close()
-	}
-	return nil
-}
-
-func GetDB() *sql.DB {
-	return db
 }

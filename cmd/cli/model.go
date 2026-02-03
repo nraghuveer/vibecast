@@ -5,6 +5,7 @@ import (
 	"github.com/nraghuveer/vibecast/cmd/cli/mock"
 	"github.com/nraghuveer/vibecast/cmd/cli/screens"
 	"github.com/nraghuveer/vibecast/lib/data"
+	"github.com/nraghuveer/vibecast/lib/db"
 	"github.com/nraghuveer/vibecast/lib/models"
 )
 
@@ -28,6 +29,7 @@ const (
 
 // Model is the main application model
 type Model struct {
+	db               *db.DB
 	screen           Screen
 	welcome          screens.WelcomeModel
 	newConversation  screens.CreateConversationModel
@@ -55,15 +57,16 @@ type Model struct {
 }
 
 // NewModel creates a new application model
-func NewModel() Model {
+func NewModel(database *db.DB) Model {
 	return Model{
+		db:           database,
 		screen:       ScreenWelcome,
 		welcome:      screens.NewWelcomeModel(),
 		topic:        screens.NewTopicModel(),
 		persona:      screens.NewPersonaModel(),
 		voice:        screens.NewVoiceModel(),
 		provider:     screens.NewProviderModel(),
-		preset:       screens.NewPresetModel(),
+		preset:       screens.NewPresetModel(database),
 		templateName: screens.NewTemplateNameModel(),
 	}
 }
@@ -124,11 +127,11 @@ func (m Model) updateWelcome(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.newConversation.Init()
 		case screens.OptionContinueConversation:
 			m.screen = ScreenConversationList
-			m.conversationList = screens.NewConversationListModel()
+			m.conversationList = screens.NewConversationListModel(m.db)
 			return m, m.conversationList.Init()
 		case screens.OptionQuickStart:
 			m.screen = ScreenPreset
-			m.preset = screens.NewPresetModel()
+			m.preset = screens.NewPresetModel(m.db)
 			return m, m.preset.Init()
 		case screens.OptionCreateTemplate:
 			m.screen = ScreenTemplateName
@@ -181,6 +184,7 @@ func (m Model) updateConversationList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.screen = ScreenConversation
 		m.conversation = screens.NewConversationModelWithTitle(
+			m.db,
 			m.selectedTitle,
 			m.selectedTopic,
 			m.selectedPersona,
@@ -242,6 +246,7 @@ func (m Model) updateVoice(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.selectedProvider != "" {
 			m.screen = ScreenConversation
 			m.conversation = screens.NewConversationModelWithTitle(
+				m.db,
 				m.selectedTitle,
 				m.selectedTopic,
 				m.selectedPersona,
@@ -270,6 +275,7 @@ func (m Model) updateProvider(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.selectedProvider = psm.Provider
 		m.screen = ScreenConversation
 		m.conversation = screens.NewConversationModelWithTitle(
+			m.db,
 			m.selectedTitle,
 			m.selectedTopic,
 			m.selectedPersona,
@@ -359,7 +365,7 @@ func (m Model) updateTemplatePersona(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.selectedPersona = psm.Persona
 
 		// Save the new template
-		data.AddTemplate(models.Template{
+		data.AddTemplate(m.db, models.Template{
 			ID:      m.newTemplateName,
 			Name:    m.newTemplateName,
 			Topic:   m.selectedTopic,

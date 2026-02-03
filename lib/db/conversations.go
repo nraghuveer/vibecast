@@ -20,7 +20,7 @@ type Conversation struct {
 	EndedAt   sql.NullTime
 }
 
-func CreateConversation(c models.Conversation) error {
+func (db *DB) CreateConversation(c models.Conversation) error {
 	query := `
 		INSERT INTO conversations (id, title, topic, persona, voice_id, voice_name, provider, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -34,7 +34,7 @@ func CreateConversation(c models.Conversation) error {
 	return nil
 }
 
-func GetConversation(id string) (*Conversation, error) {
+func (db *DB) GetConversation(id string) (*Conversation, error) {
 	query := `
 		SELECT id, title, topic, persona, voice_id, voice_name, provider, created_at, ended_at
 		FROM conversations
@@ -64,7 +64,7 @@ func GetConversation(id string) (*Conversation, error) {
 	return &c, nil
 }
 
-func GetAllConversations() ([]Conversation, error) {
+func (db *DB) GetAllConversations() ([]Conversation, error) {
 	query := `
 		SELECT id, title, topic, persona, voice_id, voice_name, provider, created_at, ended_at
 		FROM conversations
@@ -100,7 +100,7 @@ func GetAllConversations() ([]Conversation, error) {
 	return conversations, nil
 }
 
-func UpdateConversationEndedAt(id string, endedAt time.Time) error {
+func (db *DB) UpdateConversationEndedAt(id string, endedAt time.Time) error {
 	query := `
 		UPDATE conversations
 		SET ended_at = ?
@@ -124,7 +124,7 @@ func UpdateConversationEndedAt(id string, endedAt time.Time) error {
 	return nil
 }
 
-func DeleteConversation(id string) error {
+func (db *DB) DeleteConversation(id string) error {
 	query := `DELETE FROM conversations WHERE id = ?`
 
 	result, err := db.Exec(query, id)
@@ -144,7 +144,7 @@ func DeleteConversation(id string) error {
 	return nil
 }
 
-func DeleteAllConversations() error {
+func (db *DB) DeleteAllConversations() error {
 	query := `DELETE FROM conversations`
 
 	_, err := db.Exec(query)
@@ -155,7 +155,7 @@ func DeleteAllConversations() error {
 	return nil
 }
 
-func ConversationExists(id string) (bool, error) {
+func (db *DB) ConversationExists(id string) (bool, error) {
 	query := `SELECT COUNT(*) FROM conversations WHERE id = ?`
 
 	var count int

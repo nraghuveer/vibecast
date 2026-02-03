@@ -8,11 +8,13 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nraghuveer/vibecast/cmd/cli/styles"
 	"github.com/nraghuveer/vibecast/lib/data"
+	"github.com/nraghuveer/vibecast/lib/db"
 	"github.com/nraghuveer/vibecast/lib/models"
 )
 
 // PresetModel represents the preset selection screen
 type PresetModel struct {
+	db        *db.DB
 	templates []models.Template
 	cursor    int
 	selected  models.Template
@@ -21,9 +23,10 @@ type PresetModel struct {
 }
 
 // NewPresetModel creates a new preset selection screen model
-func NewPresetModel() PresetModel {
-	templates := data.GetTemplates()
+func NewPresetModel(database *db.DB) PresetModel {
+	templates := data.GetTemplates(database)
 	return PresetModel{
+		db:        database,
 		templates: templates,
 		cursor:    0,
 	}

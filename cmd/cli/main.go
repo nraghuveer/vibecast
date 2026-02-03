@@ -26,16 +26,17 @@ func main() {
 	fmt.Printf("Speech to Text Provider: %s\n", config.GetSpeechToTextProvider())
 	fmt.Printf("Text to Speech Provider: %s\n", config.GetTextToSpeechProvider())
 
-	if err := db.Init(); err != nil {
+	database, err := db.NewDB()
+	if err != nil {
 		fmt.Printf("Error initializing database: %v\n", err)
 		os.Exit(1)
 	}
-	defer db.Close()
+	defer database.Close()
 
-	data.InitializeDefaultTemplates()
+	data.InitializeDefaultTemplates(database)
 
 	p := tea.NewProgram(
-		NewModel(),
+		NewModel(database),
 		tea.WithAltScreen(),
 	)
 

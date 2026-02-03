@@ -12,6 +12,7 @@ import (
 
 // ConversationListModel displays a list of existing conversations
 type ConversationListModel struct {
+	db            *db.DB
 	conversations []db.Conversation
 	cursor        int
 	showDetails   bool // Toggle for showing topic/persona (Ctrl+I)
@@ -25,10 +26,11 @@ type ConversationSelectedMsg struct {
 	Conversation db.Conversation
 }
 
-func NewConversationListModel() ConversationListModel {
-	conversations, err := db.GetAllConversations()
+func NewConversationListModel(database *db.DB) ConversationListModel {
+	conversations, err := database.GetAllConversations()
 
 	return ConversationListModel{
+		db:            database,
 		conversations: conversations,
 		cursor:        0,
 		showDetails:   false,

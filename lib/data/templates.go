@@ -8,19 +8,19 @@ import (
 	"github.com/nraghuveer/vibecast/lib/models"
 )
 
-func InitializeDefaultTemplates() {
+func InitializeDefaultTemplates(database *db.DB) {
 	for _, t := range mock.DefaultTemplates {
-		exists, err := db.TemplateExists(t.ID)
+		exists, err := database.TemplateExists(t.ID)
 		if err == nil && !exists {
-			if err := db.CreateTemplate(t); err != nil {
+			if err := database.CreateTemplate(t); err != nil {
 				fmt.Printf("Warning: failed to initialize default template %s: %v\n", t.ID, err)
 			}
 		}
 	}
 }
 
-func GetTemplates() []models.Template {
-	dbTemplates, err := db.GetAllTemplates()
+func GetTemplates(database *db.DB) []models.Template {
+	dbTemplates, err := database.GetAllTemplates()
 	if err != nil {
 		return mock.DefaultTemplates
 	}
@@ -38,8 +38,8 @@ func GetTemplates() []models.Template {
 	return templates
 }
 
-func GetCustomTemplates() []models.Template {
-	all := GetTemplates()
+func GetCustomTemplates(database *db.DB) []models.Template {
+	all := GetTemplates(database)
 	custom := make([]models.Template, 0)
 
 	for _, t := range all {
@@ -58,14 +58,14 @@ func GetCustomTemplates() []models.Template {
 	return custom
 }
 
-func AddTemplate(t models.Template) error {
-	return db.CreateTemplate(t)
+func AddTemplate(database *db.DB, t models.Template) error {
+	return database.CreateTemplate(t)
 }
 
-func UpdateTemplate(t models.Template) error {
-	return db.UpdateTemplate(t)
+func UpdateTemplate(database *db.DB, t models.Template) error {
+	return database.UpdateTemplate(t)
 }
 
-func DeleteTemplate(id string) error {
-	return db.DeleteTemplate(id)
+func DeleteTemplate(database *db.DB, id string) error {
+	return database.DeleteTemplate(id)
 }

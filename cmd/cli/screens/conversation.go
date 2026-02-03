@@ -26,6 +26,7 @@ type Message struct {
 
 // ConversationModel represents the main conversation screen
 type ConversationModel struct {
+	db            *db.DB
 	textInput     textinput.Model
 	messages      []Message
 	width         int
@@ -48,7 +49,7 @@ type ConversationModel struct {
 }
 
 // NewConversationModelWithTitle creates a new conversation screen model with a title
-func NewConversationModelWithTitle(title, topic, persona string, voice mock.Voice, provider string, width, height int) ConversationModel {
+func NewConversationModelWithTitle(database *db.DB, title, topic, persona string, voice mock.Voice, provider string, width, height int) ConversationModel {
 	ti := textinput.New()
 	ti.Placeholder = "Type your message..."
 	ti.Focus()
@@ -74,9 +75,10 @@ func NewConversationModelWithTitle(title, topic, persona string, voice mock.Voic
 		Provider:  provider,
 		CreatedAt: time.Now(),
 	}
-	db.CreateConversation(conv)
+	database.CreateConversation(conv)
 
 	return ConversationModel{
+		db:          database,
 		textInput:   ti,
 		messages:    []Message{},
 		width:       width,
@@ -492,7 +494,7 @@ func (m ConversationModel) ID() string {
 // EndConversation marks the conversation as ended
 func (m ConversationModel) EndConversation() error {
 	now := time.Now()
-	return db.UpdateConversationEndedAt(m.id, now)
+	return m.db.UpdateConversationEndedAt(m.id, now)
 }
 
 // ExitConversationMsg signals to exit the conversation
