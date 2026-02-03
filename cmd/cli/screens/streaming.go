@@ -1,6 +1,10 @@
 package screens
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/nraghuveer/vibecast/lib/models"
+)
 
 type StreamingModel struct {
 	isTyping      bool
@@ -33,7 +37,7 @@ func (m *StreamingModel) Advance() bool {
 func (m *StreamingModel) Complete() Message {
 	msg := Message{
 		Content:  m.fullResponse,
-		IsHost:   false,
+		Speaker:  models.GUEST,
 		Complete: true,
 	}
 	m.streamingText = ""

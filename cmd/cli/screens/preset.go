@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nraghuveer/vibecast/cmd/cli/styles"
@@ -12,57 +13,86 @@ import (
 	"github.com/nraghuveer/vibecast/lib/models"
 )
 
-// PresetModel represents the preset selection screen
+// PresetModel represents the preset selection screen with title input
 type PresetModel struct {
-	db        *db.DB
-	templates []models.Template
-	cursor    int
-	selected  models.Template
-	width     int
-	height    int
+	db         *db.DB
+	templates  []models.Template
+	cursor     int
+	titleInput textinput.Model
+	showError  bool
+	selected   models.Template
+	width      int
+	height     int
 }
 
 // NewPresetModel creates a new preset selection screen model
 func NewPresetModel(database *db.DB) PresetModel {
 	templates := data.GetTemplates(database)
+
+	ti := textinput.New()
+	ti.Placeholder = "e.g., AI Future Discussion, Tech Deep Dive..."
+	ti.CharLimit = 100
+	ti.Focus()
+
 	return PresetModel{
-		db:        database,
-		templates: templates,
-		cursor:    0,
+		db:         database,
+		templates:  templates,
+		cursor:     0,
+		titleInput: ti,
+		showError:  false,
 	}
 }
 
 // Init initializes the preset model
 func (m PresetModel) Init() tea.Cmd {
-	return nil
+	return textinput.Blink
 }
 
 // Update handles messages for the preset screen
 func (m PresetModel) Update(msg tea.Msg) (PresetModel, tea.Cmd) {
+	var cmd tea.Cmd
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.titleInput.Width = m.width - 20
+		if m.titleInput.Width > 100 {
+			m.titleInput.Width = 100
+		}
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, key.NewBinding(key.WithKeys("up", "k"))):
 			if m.cursor > 0 {
 				m.cursor--
 			}
+			m.showError = false
 		case key.Matches(msg, key.NewBinding(key.WithKeys("down", "j"))):
 			if m.cursor < len(m.templates)-1 {
 				m.cursor++
 			}
+			m.showError = false
 		case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
+			if m.titleInput.Value() == "" {
+				m.showError = true
+				return m, nil
+			}
 			m.selected = m.templates[m.cursor]
-			return m, func() tea.Msg { return PresetSelectedMsg{Template: m.selected} }
+			return m, func() tea.Msg {
+				return PresetSelectedMsg{
+					Template: m.selected,
+					Title:    m.titleInput.Value(),
+				}
+			}
 		case key.Matches(msg, key.NewBinding(key.WithKeys("esc"))):
 			return m, func() tea.Msg { return BackToWelcomeMsg{} }
 		case key.Matches(msg, key.NewBinding(key.WithKeys("ctrl+c"))):
 			return m, tea.Quit
 		}
 	}
-	return m, nil
+
+	m.titleInput, cmd = m.titleInput.Update(msg)
+	return m, cmd
 }
 
 // View renders the preset selection screen
@@ -70,8 +100,21 @@ func (m PresetModel) View() string {
 	title := styles.TitleStyle.Render("Quick Start - Select a Template")
 
 	description := styles.SubtitleStyle.Render(
-		"Choose a predefined topic and persona to get started quickly",
+		"Enter a title and choose a predefined topic and persona to get started quickly",
 	)
+
+	// Title input section
+	titleLabel := lipgloss.NewStyle().Bold(true).Foreground(styles.PrimaryColor).Render("Conversation Title:")
+	titleInputBox := m.titleInput.View()
+
+	// Error message
+	var errorMsg string
+	if m.showError {
+		errorMsg = lipgloss.NewStyle().Bold(true).Foreground(styles.ErrorColor).Render("⚠ Title is required - please enter a conversation title")
+	}
+
+	// Templates section
+	templatesLabel := lipgloss.NewStyle().Bold(true).Foreground(styles.PrimaryColor).Render("Select Template:")
 
 	var items string
 	for i, tmpl := range m.templates {
@@ -99,6 +142,23 @@ func (m PresetModel) View() string {
 		title,
 		description,
 		"",
+		titleLabel,
+		titleInputBox,
+	)
+
+	if m.showError {
+		content = lipgloss.JoinVertical(
+			lipgloss.Left,
+			content,
+			errorMsg,
+		)
+	}
+
+	content = lipgloss.JoinVertical(
+		lipgloss.Left,
+		content,
+		"",
+		templatesLabel,
 		items,
 		help,
 	)
@@ -119,9 +179,15 @@ func (m PresetModel) SelectedTemplate() models.Template {
 	return m.selected
 }
 
+// Title returns the entered title
+func (m PresetModel) Title() string {
+	return m.titleInput.Value()
+}
+
 // PresetSelectedMsg signals that a preset has been selected
 type PresetSelectedMsg struct {
 	Template models.Template
+	Title    string
 }
 
 // BackToWelcomeMsg signals to go back to the welcome screen

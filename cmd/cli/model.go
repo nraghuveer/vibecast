@@ -174,22 +174,11 @@ func (m Model) updateConversationList(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Check for conversation selected
 	if csm, ok := msg.(screens.ConversationSelectedMsg); ok {
-		m.selectedTitle = csm.Conversation.Title
-		m.selectedTopic = csm.Conversation.Topic
-		m.selectedPersona = csm.Conversation.Persona
-		m.selectedProvider = csm.Conversation.Provider
-		m.selectedVoice = mock.Voice{
-			ID:   csm.Conversation.VoiceID,
-			Name: csm.Conversation.VoiceName,
-		}
+		// Use existing conversation - load messages and continue
 		m.screen = ScreenConversation
-		m.conversation = screens.NewConversationModelWithTitle(
+		m.conversation = screens.NewConversationModelFromExisting(
 			m.db,
-			m.selectedTitle,
-			m.selectedTopic,
-			m.selectedPersona,
-			m.selectedVoice,
-			m.selectedProvider,
+			csm.Conversation,
 			m.width,
 			m.height,
 		)
@@ -302,6 +291,7 @@ func (m Model) updatePreset(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Check for preset selection
 	if psm, ok := msg.(screens.PresetSelectedMsg); ok {
+		m.selectedTitle = psm.Title
 		m.selectedTopic = psm.Template.Topic
 		m.selectedPersona = psm.Template.Persona
 		m.screen = ScreenVoice

@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/nraghuveer/vibecast/lib/models"
 )
 
 const (
@@ -136,4 +139,87 @@ func DeleteTranscript(conversationID string) error {
 	}
 
 	return nil
+}
+
+// Message represents a parsed message from the transcript
+type Message struct {
+	Timestamp time.Time
+	Speaker   models.SpeakerType
+	Content   string
+}
+
+// LoadMessages loads all messages from the transcript file
+func LoadMessages(conversationID string) ([]Message, error) {
+	transcriptPath, err := getTranscriptPath(conversationID)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := os.ReadFile(transcriptPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []Message{}, nil
+		}
+		return nil, fmt.Errorf("failed to read transcript file: %w", err)
+	}
+
+	return parseTranscript(string(data)), nil
+}
+
+// parseTranscript parses transcript content into messages
+func parseTranscript(content string) []Message {
+	var messages []Message
+	lines := strings.Split(content, "\n")
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		// Parse format: [2023-10-01T12:34:56Z] Speaker: Content
+		if !strings.HasPrefix(line, "[") {
+			continue
+		}
+
+		// Find closing bracket for timestamp
+		closeBracket := strings.Index(line, "]")
+		if closeBracket == -1 {
+			continue
+		}
+
+		timestampStr := line[1:closeBracket]
+		timestamp, err := time.Parse(time.RFC3339, timestampStr)
+		if err != nil {
+			continue
+		}
+
+		// Get the rest after the bracket and space
+		rest := strings.TrimSpace(line[closeBracket+1:])
+		if rest == "" {
+			continue
+		}
+
+		// Find speaker and content
+		colonIdx := strings.Index(rest, ":")
+		if colonIdx == -1 {
+			continue
+		}
+
+		speakerStr := strings.TrimSpace(rest[:colonIdx])
+		content := strings.TrimSpace(rest[colonIdx+1:])
+
+		// Skip audio references in content
+		if idx := strings.Index(content, " [Audio:"); idx != -1 {
+			content = strings.TrimSpace(content[:idx])
+		}
+
+		messages = append(messages, Message{
+			Timestamp: timestamp,
+			Speaker:   models.ParseSpeakerType(speakerStr),
+			Content:   content,
+		})
+	}
+
+	return messages
 }

@@ -116,3 +116,28 @@ func Logo() string {
   ╚╝ ╩╚═╝╚═╝╚═╝╩ ╩╚═╝ ╩ `
 	return LogoStyle.Render(logo)
 }
+
+// LogoWithTitle returns the VibeCast logo with the conversation title displayed underneath
+func LogoWithTitle(title string) string {
+	logo := Logo()
+	if title == "" {
+		return logo
+	}
+
+	// Center the title under the logo
+	titleStyle := lipgloss.NewStyle().
+		Foreground(MutedColor).
+		Italic(true)
+
+	// Logo is roughly 26 chars wide, center title accordingly
+	centeredTitle := lipgloss.NewStyle().
+		Width(26).
+		Align(lipgloss.Center).
+		Render(titleStyle.Render(title))
+
+	return lipgloss.JoinVertical(
+		lipgloss.Center,
+		logo,
+		centeredTitle,
+	)
+}

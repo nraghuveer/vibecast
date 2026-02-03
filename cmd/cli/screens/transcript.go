@@ -5,6 +5,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nraghuveer/vibecast/cmd/cli/styles"
+	"github.com/nraghuveer/vibecast/lib/models"
 )
 
 type TranscriptModel struct {
@@ -37,7 +38,7 @@ func (m *TranscriptModel) ShowTranscript() bool {
 func (m *TranscriptModel) RenderPanel(width, height int, isTyping bool, streamingText string) string {
 	var transcript strings.Builder
 	for _, msg := range m.messages {
-		if msg.IsHost {
+		if msg.Speaker == models.HOST {
 			transcript.WriteString(styles.HostLabelStyle.Render("HOST: "))
 			transcript.WriteString(styles.TranscriptTextStyle.Render(msg.Content))
 		} else {
