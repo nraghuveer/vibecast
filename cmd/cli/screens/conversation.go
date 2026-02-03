@@ -1,7 +1,10 @@
 package screens
 
 import (
+	"context"
 	"fmt"
+	"log"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -12,7 +15,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/nraghuveer/vibecast/cmd/cli/mock"
 	"github.com/nraghuveer/vibecast/cmd/cli/styles"
+	"github.com/nraghuveer/vibecast/lib/audio"
+	"github.com/nraghuveer/vibecast/lib/config"
 	"github.com/nraghuveer/vibecast/lib/db"
+	"github.com/nraghuveer/vibecast/lib/llm"
 	"github.com/nraghuveer/vibecast/lib/models"
 	"github.com/nraghuveer/vibecast/lib/storage"
 )
@@ -38,8 +44,15 @@ type ConversationModel struct {
 	provider      string
 	isTyping      bool
 	streamingText string
-	fullResponse  string
-	streamIndex   int
+	ttsQueue      []string
+	ttsInFlight   bool
+	ttsLastChunk  string
+	llmRawBuffer  string
+	llmInSpeech   bool
+	llmSpeechBuf  string
+	llmClient     *llm.Client
+	llmStream     <-chan llm.StreamEvent
+	llmCancel     context.CancelFunc
 	id            string
 	dotFrame      int  // For flowing dots animation
 	showDetails   bool // Toggle for showing topic/persona (Ctrl+I)
@@ -94,6 +107,8 @@ func NewConversationModelWithTitle(database *db.DB, title, topic, persona string
 		inputMode:   "text",
 		isMuted:     false,
 		sttDraft:    "",
+		ttsQueue:    []string{},
+		llmClient:   llm.New(),
 	}
 }
 
@@ -137,6 +152,8 @@ func NewConversationModelFromExisting(database *db.DB, conversation db.Conversat
 		inputMode:   "text",
 		isMuted:     false,
 		sttDraft:    "",
+		ttsQueue:    []string{},
+		llmClient:   llm.New(),
 	}
 }
 
@@ -168,14 +185,23 @@ func (m ConversationModel) Init() tea.Cmd {
 	return textinput.Blink
 }
 
-// TickMsg is sent for streaming animation
-type TickMsg struct{}
-
 // DotAnimationMsg is sent for flowing dots animation
 type DotAnimationMsg struct{}
 
 // ResponseCompleteMsg signals the response is done streaming
 type ResponseCompleteMsg struct{}
+
+// LLMStreamMsg delivers streamed LLM deltas to the UI.
+type LLMStreamMsg struct {
+	Event llm.StreamEvent
+}
+
+// TTSSavedMsg indicates synthesized audio has been saved.
+type TTSSavedMsg struct {
+	Filename string
+	Path     string
+	Err      error
+}
 
 // SttDraftMsg updates the live speech-to-text draft text.
 // Future STT streaming should emit this message with partial transcripts.
@@ -205,30 +231,88 @@ func (m ConversationModel) Update(msg tea.Msg) (ConversationModel, tea.Cmd) {
 		m.textInput.Width = m.width - 4 // Full width minus small padding
 
 	case StartResponseMsg:
-		m.isTyping = true
-		m.fullResponse = mock.GetResponse("", msg.IsFirst)
-		m.streamingText = ""
-		m.streamIndex = 0
-		m.dotFrame = 0
-		return m, tea.Batch(m.tickCmd(), m.dotAnimationCmd())
-
-	case TickMsg:
-		if m.streamIndex < len(m.fullResponse) {
-			m.streamingText += string(m.fullResponse[m.streamIndex])
-			m.streamIndex++
-			return m, m.tickCmd()
+		// Cancel any in-flight request.
+		if m.llmCancel != nil {
+			m.llmCancel()
+			m.llmCancel = nil
 		}
-		// Response complete
-		m.isTyping = false
-		m.messages = append(m.messages, Message{
-			Content:  m.fullResponse,
-			Speaker:  models.GUEST,
-			Complete: true,
-		})
-		storage.AppendMessage(m.id, "Guest", m.fullResponse)
+
+		m.isTyping = true
 		m.streamingText = ""
-		m.fullResponse = ""
-		return m, nil
+		m.dotFrame = 0
+		m.resetLLMParser()
+		m.ttsQueue = nil
+		m.ttsInFlight = false
+		m.ttsLastChunk = ""
+
+		ctx, cancel := context.WithCancel(context.Background())
+		m.llmCancel = cancel
+
+		history := m.toChatHistory(msg.IsFirst)
+		stream, err := m.llmClient.StreamGuestResponse(ctx, m.provider, m.persona, m.topic, history)
+		if err != nil {
+			m.isTyping = false
+			notice := "Sorry—I'm having trouble connecting to the AI provider right now. Give me a moment and try again."
+			m.messages = append(m.messages, Message{Content: notice, Speaker: models.GUEST, Complete: true})
+			_ = storage.AppendMessage(m.id, "Guest", notice)
+			return m, nil
+		}
+
+		m.llmStream = stream
+		return m, tea.Batch(m.dotAnimationCmd(), m.waitLLMEventCmd())
+
+	case LLMStreamMsg:
+		if msg.Event.Err != nil {
+			m.isTyping = false
+			m.llmStream = nil
+			if m.llmCancel != nil {
+				m.llmCancel()
+				m.llmCancel = nil
+			}
+			m.resetLLMParser()
+
+			notice := "Sorry—looks like I'm having trouble reaching the AI right now. Want to try that again in a second?"
+			m.messages = append(m.messages, Message{Content: notice, Speaker: models.GUEST, Complete: true})
+			_ = storage.AppendMessage(m.id, "Guest", notice)
+			return m, nil
+		}
+
+		if msg.Event.Delta != "" {
+			speechDelta, blocks := m.consumeLLMDelta(msg.Event.Delta)
+			if speechDelta != "" {
+				m.streamingText += speechDelta
+			}
+			var ttsCmd tea.Cmd
+			m, ttsCmd = m.enqueueTTSBlocks(blocks)
+			return m, tea.Batch(m.waitLLMEventCmd(), ttsCmd)
+		}
+
+		if msg.Event.Done {
+			m.isTyping = false
+			m.llmStream = nil
+			if m.llmCancel != nil {
+				m.llmCancel()
+				m.llmCancel = nil
+			}
+
+			finalDelta, blocks := m.finalizeLLMStream()
+			if finalDelta != "" {
+				m.streamingText += finalDelta
+			}
+
+			final := strings.TrimSpace(m.streamingText)
+			if final == "" {
+				final = "Um—I'm blanking for a second. Could you rephrase that?"
+			}
+
+			m.messages = append(m.messages, Message{Content: final, Speaker: models.GUEST, Complete: true})
+			_ = storage.AppendMessage(m.id, "Guest", final)
+			m.streamingText = ""
+			m, ttsCmd := m.enqueueTTSBlocks(blocks)
+			return m, ttsCmd
+		}
+
+		return m, m.waitLLMEventCmd()
 
 	case DotAnimationMsg:
 		if m.isTyping {
@@ -236,6 +320,19 @@ func (m ConversationModel) Update(msg tea.Msg) (ConversationModel, tea.Cmd) {
 			return m, m.dotAnimationCmd()
 		}
 		return m, nil
+
+	case TTSSavedMsg:
+		if msg.Err != nil || msg.Filename == "" {
+			m.ttsInFlight = false
+			return m.startNextTTS()
+		}
+		if msg.Path != "" {
+			if err := audio.Enqueue(msg.Path); err != nil {
+				log.Printf("audio enqueue failed: %v", err)
+			}
+		}
+		m.ttsInFlight = false
+		return m.startNextTTS()
 
 	case SttDraftMsg:
 		if m.inputMode == "voice" {
@@ -260,6 +357,7 @@ func (m ConversationModel) Update(msg tea.Msg) (ConversationModel, tea.Cmd) {
 				return m, nil
 			}
 		case key.Matches(msg, key.NewBinding(key.WithKeys("ctrl+c"))):
+			m.cancelInflightLLM()
 			m.EndConversation()
 			return m, tea.Quit
 		case key.Matches(msg, key.NewBinding(key.WithKeys("ctrl+i"))):
@@ -267,6 +365,7 @@ func (m ConversationModel) Update(msg tea.Msg) (ConversationModel, tea.Cmd) {
 			return m, nil
 		case key.Matches(msg, key.NewBinding(key.WithKeys("q"))):
 			if !m.isTyping && m.textInput.Value() == "" {
+				m.cancelInflightLLM()
 				m.EndConversation()
 				return m, tea.Quit
 			}
@@ -281,14 +380,7 @@ func (m ConversationModel) Update(msg tea.Msg) (ConversationModel, tea.Cmd) {
 				})
 				storage.AppendMessage(m.id, "Host", hostMsg)
 				m.textInput.Reset()
-
-				// Start guest response
-				m.isTyping = true
-				m.fullResponse = mock.GetResponse(hostMsg, false)
-				m.streamingText = ""
-				m.streamIndex = 0
-				m.dotFrame = 0
-				return m, tea.Batch(m.tickCmd(), m.dotAnimationCmd())
+				return m, m.startGuestResponse(false)
 			}
 		}
 	}
@@ -299,10 +391,368 @@ func (m ConversationModel) Update(msg tea.Msg) (ConversationModel, tea.Cmd) {
 	return m, cmd
 }
 
-func (m ConversationModel) tickCmd() tea.Cmd {
-	return tea.Tick(50*time.Millisecond, func(t time.Time) tea.Msg {
-		return TickMsg{}
-	})
+func (m ConversationModel) waitLLMEventCmd() tea.Cmd {
+	stream := m.llmStream
+	return func() tea.Msg {
+		if stream == nil {
+			return LLMStreamMsg{Event: llm.StreamEvent{Done: true}}
+		}
+		ev, ok := <-stream
+		if !ok {
+			return LLMStreamMsg{Event: llm.StreamEvent{Done: true}}
+		}
+		return LLMStreamMsg{Event: ev}
+	}
+}
+
+func (m *ConversationModel) resetLLMParser() {
+	m.llmRawBuffer = ""
+	m.llmInSpeech = false
+	m.llmSpeechBuf = ""
+}
+
+func (m *ConversationModel) consumeLLMDelta(delta string) (string, []string) {
+	m.llmRawBuffer += delta
+	return m.parseLLMBuffer(false)
+}
+
+func (m *ConversationModel) finalizeLLMStream() (string, []string) {
+	return m.parseLLMBuffer(true)
+}
+
+func (m *ConversationModel) parseLLMBuffer(final bool) (string, []string) {
+	const startTag = "<speech>"
+	const endTag = "</speech>"
+	buffer := m.llmRawBuffer
+	inSpeech := m.llmInSpeech
+	speechBuf := m.llmSpeechBuf
+	var out strings.Builder
+	var blocks []string
+
+	for {
+		if inSpeech {
+			idx := strings.Index(buffer, endTag)
+			if idx == -1 {
+				keep := partialTagSuffix(buffer, endTag)
+				if len(buffer) > keep {
+					segment := buffer[:len(buffer)-keep]
+					out.WriteString(segment)
+					speechBuf += segment
+					buffer = buffer[len(buffer)-keep:]
+				}
+				break
+			}
+			segment := buffer[:idx]
+			out.WriteString(segment)
+			speechBuf += segment
+			buffer = buffer[idx+len(endTag):]
+			block := strings.TrimSpace(speechBuf)
+			if block != "" {
+				blocks = append(blocks, block)
+			}
+			speechBuf = ""
+			inSpeech = false
+			continue
+		}
+
+		idx := strings.Index(buffer, startTag)
+		if idx == -1 {
+			keep := partialTagSuffix(buffer, startTag)
+			if len(buffer) > keep {
+				buffer = buffer[len(buffer)-keep:]
+			}
+			break
+		}
+		buffer = buffer[idx+len(startTag):]
+		inSpeech = true
+	}
+
+	if final {
+		if inSpeech {
+			keep := partialTagSuffix(buffer, endTag)
+			content := buffer
+			if keep > 0 && len(buffer) >= keep {
+				content = buffer[:len(buffer)-keep]
+			}
+			content = strings.TrimSpace(content)
+			if content != "" {
+				out.WriteString(content)
+				speechBuf += content
+			}
+			block := strings.TrimSpace(speechBuf)
+			if block != "" {
+				blocks = append(blocks, block)
+			}
+			speechBuf = ""
+			inSpeech = false
+		}
+		buffer = ""
+	}
+
+	m.llmRawBuffer = buffer
+	m.llmInSpeech = inSpeech
+	m.llmSpeechBuf = speechBuf
+	return out.String(), blocks
+}
+
+func partialTagSuffix(buffer string, tag string) int {
+	max := len(tag) - 1
+	if max > len(buffer) {
+		max = len(buffer)
+	}
+	for i := max; i > 0; i-- {
+		if strings.HasSuffix(buffer, tag[:i]) {
+			return i
+		}
+	}
+	return 0
+}
+
+func (m *ConversationModel) cancelInflightLLM() {
+	if m.llmCancel != nil {
+		m.llmCancel()
+		m.llmCancel = nil
+	}
+	m.llmStream = nil
+}
+
+func (m ConversationModel) toChatHistory(isFirst bool) []llm.ChatMessage {
+	if isFirst {
+		return []llm.ChatMessage{{
+			Role:    "user",
+			Content: fmt.Sprintf("Start the episode with a brief warm greeting to the host, then invite the first question about the topic: %s.", m.topic),
+		}}
+	}
+
+	history := make([]llm.ChatMessage, 0, len(m.messages))
+	for _, msg := range m.messages {
+		switch msg.Speaker {
+		case models.HOST:
+			history = append(history, llm.ChatMessage{Role: "user", Content: msg.Content})
+		case models.GUEST:
+			history = append(history, llm.ChatMessage{Role: "assistant", Content: msg.Content})
+		}
+	}
+	return history
+}
+
+func (m ConversationModel) ttsCmd(text string) tea.Cmd {
+	// Keep TTS best-effort; conversation should work without it.
+	ttsProvider := config.GetTextToSpeechProvider()
+	if strings.TrimSpace(ttsProvider) == "" {
+		ttsProvider = "openai"
+	}
+
+	if url, err := config.GetProviderTTSURL(ttsProvider); err != nil || strings.TrimSpace(url) == "" {
+		if _, err := config.GetProviderConfig("openai"); err == nil {
+			ttsProvider = "openai"
+		}
+	}
+
+	voiceID := m.voice.ID
+	persona := m.persona
+	topic := m.topic
+	conversationID := m.id
+	client := m.llmClient
+
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		cleanText := normalizeTTSInput(text)
+		audio, _, err := client.SynthesizeGuestSpeech(ctx, "", ttsProvider, persona, topic, voiceID, cleanText)
+		if err != nil {
+			return TTSSavedMsg{Err: err}
+		}
+		filename, err := storage.SaveAudio(conversationID, audio)
+		if err != nil {
+			return TTSSavedMsg{Err: err}
+		}
+		audioDir, err := storage.GetAudioDir(conversationID)
+		if err != nil {
+			return TTSSavedMsg{Filename: filename, Err: err}
+		}
+		return TTSSavedMsg{Filename: filename, Path: filepath.Join(audioDir, filename)}
+	}
+}
+
+func (m ConversationModel) enqueueTTSBlocks(blocks []string) (ConversationModel, tea.Cmd) {
+	if len(blocks) == 0 {
+		return m, nil
+	}
+	for _, block := range blocks {
+		trimmed := strings.TrimSpace(block)
+		if trimmed == "" {
+			continue
+		}
+		m.ttsQueue = append(m.ttsQueue, trimmed)
+	}
+	return m.startNextTTS()
+}
+
+func normalizeTTSInput(text string) string {
+	clean := stripHTMLTags(text)
+	clean = ensureSentenceSpacing(clean)
+	clean = strings.Join(strings.Fields(clean), " ")
+	return strings.TrimSpace(clean)
+}
+
+func stripHTMLTags(s string) string {
+	var b strings.Builder
+	inTag := false
+	for _, r := range s {
+		switch r {
+		case '<':
+			inTag = true
+		case '>':
+			inTag = false
+		default:
+			if !inTag {
+				b.WriteRune(r)
+			}
+		}
+	}
+	return b.String()
+}
+
+func ensureSentenceSpacing(s string) string {
+	var b strings.Builder
+	runes := []rune(s)
+	for i := 0; i < len(runes); i++ {
+		b.WriteRune(runes[i])
+		if i == len(runes)-1 {
+			continue
+		}
+		if isPunct(runes[i]) && !isSpace(runes[i+1]) {
+			b.WriteRune(' ')
+		}
+	}
+	return b.String()
+}
+
+func isPunct(r rune) bool {
+	switch r {
+	case '.', '!', '?', ',', ':', ';':
+		return true
+	default:
+		return false
+	}
+}
+
+func isSpace(r rune) bool {
+	switch r {
+	case ' ', '\n', '\t', '\r':
+		return true
+	default:
+		return false
+	}
+}
+
+func renderTranscriptMessage(labelStyle lipgloss.Style, label, content string, width int) string {
+	labelWidth := lipgloss.Width(label)
+	textWidth := width - labelWidth - 2
+	if textWidth < 10 {
+		textWidth = 10
+	}
+
+	lines := wrapText(content, textWidth)
+	if len(lines) == 0 {
+		lines = []string{""}
+	}
+
+	var b strings.Builder
+	firstPrefix := labelStyle.Render(label) + "  "
+	pad := strings.Repeat(" ", labelWidth+2)
+	for i, line := range lines {
+		prefix := pad
+		if i == 0 {
+			prefix = firstPrefix
+		}
+		b.WriteString(prefix)
+		b.WriteString(styles.TranscriptTextStyle.Render(line))
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
+	return b.String()
+}
+
+func renderTranscriptStreaming(labelStyle lipgloss.Style, label, content string, width int) string {
+	labelWidth := lipgloss.Width(label)
+	textWidth := width - labelWidth - 2
+	if textWidth < 10 {
+		textWidth = 10
+	}
+
+	lines := wrapText(content, textWidth)
+	if len(lines) == 0 {
+		lines = []string{""}
+	}
+
+	var b strings.Builder
+	firstPrefix := labelStyle.Render(label) + "  "
+	pad := strings.Repeat(" ", labelWidth+2)
+	for i, line := range lines {
+		prefix := pad
+		if i == 0 {
+			prefix = firstPrefix
+		}
+		b.WriteString(prefix)
+		b.WriteString(styles.TranscriptTextStyle.Render(line))
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+func wrapText(text string, width int) []string {
+	if width <= 0 {
+		return []string{text}
+	}
+
+	var lines []string
+	paragraphs := strings.Split(text, "\n")
+	for _, p := range paragraphs {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			lines = append(lines, "")
+			continue
+		}
+		words := strings.Fields(p)
+		var line string
+		for _, word := range words {
+			if line == "" {
+				line = word
+				continue
+			}
+			candidate := line + " " + word
+			if lipgloss.Width(candidate) <= width {
+				line = candidate
+				continue
+			}
+			lines = append(lines, line)
+			line = word
+		}
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+func (m ConversationModel) startNextTTS() (ConversationModel, tea.Cmd) {
+	if m.ttsInFlight || len(m.ttsQueue) == 0 {
+		return m, nil
+	}
+	chunk := strings.TrimSpace(m.ttsQueue[0])
+	m.ttsQueue = m.ttsQueue[1:]
+	if chunk == "" {
+		return m.startNextTTS()
+	}
+	if chunk == m.ttsLastChunk {
+		return m.startNextTTS()
+	}
+	m.ttsInFlight = true
+	m.ttsLastChunk = chunk
+	return m, m.ttsCmd(chunk)
 }
 
 func (m ConversationModel) dotAnimationCmd() tea.Cmd {
@@ -414,23 +864,21 @@ func (m ConversationModel) renderConversation() string {
 	var transcriptView strings.Builder
 
 	// Render completed messages with HOST/GUEST labels
+	contentWidth := m.width - 4
+	if contentWidth < 20 {
+		contentWidth = 20
+	}
 	for _, msg := range m.messages {
 		if msg.Speaker == models.HOST {
-			label := styles.HostLabelStyle.Render("HOST")
-			content := styles.TranscriptTextStyle.Render(msg.Content)
-			transcriptView.WriteString(fmt.Sprintf("%s  %s\n\n", label, content))
+			transcriptView.WriteString(renderTranscriptMessage(styles.HostLabelStyle, "HOST", msg.Content, contentWidth))
 		} else {
-			label := styles.GuestLabelStyle.Render("GUEST")
-			content := styles.TranscriptTextStyle.Render(msg.Content)
-			transcriptView.WriteString(fmt.Sprintf("%s %s\n\n", label, content))
+			transcriptView.WriteString(renderTranscriptMessage(styles.GuestLabelStyle, "GUEST", msg.Content, contentWidth))
 		}
 	}
 
 	// Add streaming message if typing
 	if m.isTyping && m.streamingText != "" {
-		label := styles.GuestLabelStyle.Render("GUEST")
-		content := styles.TranscriptTextStyle.Render(m.streamingText + "▌")
-		transcriptView.WriteString(fmt.Sprintf("%s %s\n", label, content))
+		transcriptView.WriteString(renderTranscriptStreaming(styles.GuestLabelStyle, "GUEST", m.streamingText+"▌", contentWidth))
 	}
 
 	// Create transcript container

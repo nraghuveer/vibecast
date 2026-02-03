@@ -16,6 +16,10 @@ ai:
   # Provider for text-to-speech (audio generation)
   text_to_speech: groq
 
+  # Reasoning effort for conversation models that support it (low | medium | high)
+  # Leave empty to use provider defaults
+  reasoning_effort: ""
+
 ui:
   # Show transcripts panel during conversation
   show_transcripts: true

@@ -13,6 +13,10 @@ type StreamingModel struct {
 	streamIndex   int
 }
 
+// TickMsg is kept for legacy typing animation.
+// Some screens may still use it for fake streaming.
+type TickMsg struct{}
+
 func NewStreamingModel() StreamingModel {
 	return StreamingModel{}
 }

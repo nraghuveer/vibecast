@@ -44,6 +44,7 @@ type AIConfig struct {
 	ConversationProvider string `yaml:"conversation_provider"`
 	SpeechToTextProvider string `yaml:"speech_to_text"`
 	TextToSpeechProvider string `yaml:"text_to_speech"`
+	ReasoningEffort      string `yaml:"reasoning_effort"`
 }
 
 type ProviderConfig struct {
@@ -115,6 +116,7 @@ func createDefaultConfig() Config {
 			ConversationProvider: defaultProvider,
 			SpeechToTextProvider: defaultProvider,
 			TextToSpeechProvider: defaultProvider,
+			ReasoningEffort:      "",
 		},
 		UI: UIConfig{
 			ShowTranscripts: true,
@@ -300,6 +302,13 @@ func GetTextToSpeechProvider() string {
 		return globalConfig.AI.TextToSpeechProvider
 	}
 	return defaultProvider
+}
+
+func GetReasoningEffort() string {
+	if globalConfig != nil {
+		return strings.TrimSpace(globalConfig.AI.ReasoningEffort)
+	}
+	return ""
 }
 
 func GetProviderConfig(provider string) (*ProviderConfig, error) {
