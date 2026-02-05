@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nraghuveer/vibecast/cmd/cli/styles"
 	"github.com/nraghuveer/vibecast/lib/config"
+	"github.com/nraghuveer/vibecast/lib/logger"
 )
 
 type NewConversationField int
@@ -32,6 +33,7 @@ type CreateConversationModel struct {
 	startedAt    time.Time
 	width        int
 	height       int
+	logger       *logger.Logger
 }
 
 // NewConversationCreatedMsg is sent when a new conversation is ready to start
@@ -73,6 +75,7 @@ func NewCreateConversationModel() CreateConversationModel {
 		providerIdx:  0,
 		activeField:  FieldTitle,
 		startedAt:    time.Now(),
+		logger:       logger.GetInstance(),
 	}
 }
 
@@ -91,9 +94,11 @@ func (m CreateConversationModel) Update(msg tea.Msg) (CreateConversationModel, t
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, key.NewBinding(key.WithKeys("ctrl+c"))):
+			m.logger.Info("new_conversation_quit")
 			return m, tea.Quit
 
 		case key.Matches(msg, key.NewBinding(key.WithKeys("esc"))):
+			m.logger.Info("new_conversation_back_to_welcome")
 			return m, func() tea.Msg { return BackToWelcomeMsg{} }
 
 		case key.Matches(msg, key.NewBinding(key.WithKeys("tab", "down"))):
@@ -124,6 +129,12 @@ func (m CreateConversationModel) Update(msg tea.Msg) (CreateConversationModel, t
 					if len(m.providers) > 0 {
 						provider = m.providers[m.providerIdx].Name
 					}
+					m.logger.Info("new_conversation_created",
+						"title", m.titleInput.Value(),
+						"topic", m.topicInput.Value(),
+						"persona", m.personaInput.Value(),
+						"provider", provider,
+					)
 					return m, func() tea.Msg {
 						return NewConversationCreatedMsg{
 							Title:    m.titleInput.Value(),
@@ -132,6 +143,12 @@ func (m CreateConversationModel) Update(msg tea.Msg) (CreateConversationModel, t
 							Provider: provider,
 						}
 					}
+				} else {
+					m.logger.Warn("new_conversation_validation_failed",
+						"title_empty", m.titleInput.Value() == "",
+						"topic_empty", m.topicInput.Value() == "",
+						"persona_empty", m.personaInput.Value() == "",
+					)
 				}
 			} else {
 				// Move to next field on Enter

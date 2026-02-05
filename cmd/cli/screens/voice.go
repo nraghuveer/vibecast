@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nraghuveer/vibecast/cmd/cli/mock"
 	"github.com/nraghuveer/vibecast/cmd/cli/styles"
+	"github.com/nraghuveer/vibecast/lib/logger"
 )
 
 // VoiceModel represents the voice selection screen
@@ -17,6 +18,7 @@ type VoiceModel struct {
 	selected mock.Voice
 	width    int
 	height   int
+	logger   *logger.Logger
 }
 
 // NewVoiceModel creates a new voice selection screen model
@@ -25,6 +27,7 @@ func NewVoiceModel() VoiceModel {
 	return VoiceModel{
 		voices: voices,
 		cursor: 0,
+		logger: logger.GetInstance(),
 	}
 }
 
@@ -51,8 +54,13 @@ func (m VoiceModel) Update(msg tea.Msg) (VoiceModel, tea.Cmd) {
 			}
 		case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
 			m.selected = m.voices[m.cursor]
+			m.logger.Info("voice_selected",
+				"id", m.selected.ID,
+				"name", m.selected.Name,
+			)
 			return m, func() tea.Msg { return VoiceSelectedMsg{Voice: m.selected} }
 		case key.Matches(msg, key.NewBinding(key.WithKeys("ctrl+c"))):
+			m.logger.Info("voice_selection_quit")
 			return m, tea.Quit
 		}
 	}

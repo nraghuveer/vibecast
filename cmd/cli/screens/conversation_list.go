@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nraghuveer/vibecast/cmd/cli/styles"
 	"github.com/nraghuveer/vibecast/lib/db"
+	"github.com/nraghuveer/vibecast/lib/logger"
 )
 
 // ConversationListModel displays a list of existing conversations
@@ -19,6 +20,7 @@ type ConversationListModel struct {
 	width         int
 	height        int
 	err           error
+	logger        *logger.Logger
 }
 
 // ConversationSelectedMsg is sent when a conversation is selected
@@ -27,7 +29,13 @@ type ConversationSelectedMsg struct {
 }
 
 func NewConversationListModel(database *db.DB) ConversationListModel {
+	log := logger.GetInstance()
 	conversations, err := database.GetAllConversations()
+	if err != nil {
+		log.LogError("conversation_list_load", err)
+	} else {
+		log.Info("conversation_list_loaded", "count", len(conversations))
+	}
 
 	return ConversationListModel{
 		db:            database,
@@ -35,6 +43,7 @@ func NewConversationListModel(database *db.DB) ConversationListModel {
 		cursor:        0,
 		showDetails:   false,
 		err:           err,
+		logger:        log,
 	}
 }
 
@@ -51,9 +60,11 @@ func (m ConversationListModel) Update(msg tea.Msg) (ConversationListModel, tea.C
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, key.NewBinding(key.WithKeys("ctrl+c"))):
+			m.logger.Info("conversation_list_quit")
 			return m, tea.Quit
 
 		case key.Matches(msg, key.NewBinding(key.WithKeys("esc"))):
+			m.logger.Info("conversation_list_back_to_welcome")
 			return m, func() tea.Msg { return BackToWelcomeMsg{} }
 
 		case key.Matches(msg, key.NewBinding(key.WithKeys("ctrl+i"))):
@@ -72,8 +83,13 @@ func (m ConversationListModel) Update(msg tea.Msg) (ConversationListModel, tea.C
 
 		case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
 			if len(m.conversations) > 0 {
+				selected := m.conversations[m.cursor]
+				m.logger.Info("conversation_selected",
+					"id", selected.ID,
+					"title", selected.Title,
+				)
 				return m, func() tea.Msg {
-					return ConversationSelectedMsg{Conversation: m.conversations[m.cursor]}
+					return ConversationSelectedMsg{Conversation: selected}
 				}
 			}
 		}

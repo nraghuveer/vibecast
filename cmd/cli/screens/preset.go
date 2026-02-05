@@ -10,6 +10,7 @@ import (
 	"github.com/nraghuveer/vibecast/cmd/cli/styles"
 	"github.com/nraghuveer/vibecast/lib/data"
 	"github.com/nraghuveer/vibecast/lib/db"
+	"github.com/nraghuveer/vibecast/lib/logger"
 	"github.com/nraghuveer/vibecast/lib/models"
 )
 
@@ -23,6 +24,7 @@ type PresetModel struct {
 	selected   models.Template
 	width      int
 	height     int
+	logger     *logger.Logger
 }
 
 // NewPresetModel creates a new preset selection screen model
@@ -40,6 +42,7 @@ func NewPresetModel(database *db.DB) PresetModel {
 		cursor:     0,
 		titleInput: ti,
 		showError:  false,
+		logger:     logger.GetInstance(),
 	}
 }
 
@@ -75,9 +78,14 @@ func (m PresetModel) Update(msg tea.Msg) (PresetModel, tea.Cmd) {
 		case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
 			if m.titleInput.Value() == "" {
 				m.showError = true
+				m.logger.Warn("preset_validation_failed", "reason", "empty_title")
 				return m, nil
 			}
 			m.selected = m.templates[m.cursor]
+			m.logger.Info("preset_selected",
+				"template_name", m.selected.Name,
+				"title", m.titleInput.Value(),
+			)
 			return m, func() tea.Msg {
 				return PresetSelectedMsg{
 					Template: m.selected,
@@ -85,8 +93,10 @@ func (m PresetModel) Update(msg tea.Msg) (PresetModel, tea.Cmd) {
 				}
 			}
 		case key.Matches(msg, key.NewBinding(key.WithKeys("esc"))):
+			m.logger.Info("preset_back_to_welcome")
 			return m, func() tea.Msg { return BackToWelcomeMsg{} }
 		case key.Matches(msg, key.NewBinding(key.WithKeys("ctrl+c"))):
+			m.logger.Info("preset_quit")
 			return m, tea.Quit
 		}
 	}

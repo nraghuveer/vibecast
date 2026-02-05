@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nraghuveer/vibecast/cmd/cli/styles"
+	"github.com/nraghuveer/vibecast/lib/logger"
 )
 
 // TemplateNameModel represents the template name input screen
@@ -13,6 +14,7 @@ type TemplateNameModel struct {
 	textInput textinput.Model
 	width     int
 	height    int
+	logger    *logger.Logger
 }
 
 // NewTemplateNameModel creates a new template name input screen model
@@ -23,6 +25,7 @@ func NewTemplateNameModel() TemplateNameModel {
 
 	return TemplateNameModel{
 		textInput: ti,
+		logger:    logger.GetInstance(),
 	}
 }
 
@@ -47,13 +50,16 @@ func (m TemplateNameModel) Update(msg tea.Msg) (TemplateNameModel, tea.Cmd) {
 		switch {
 		case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
 			if m.textInput.Value() != "" {
+				m.logger.Info("template_name_entered", "name", m.textInput.Value())
 				return m, func() tea.Msg {
 					return TemplateNameEnteredMsg{Name: m.textInput.Value()}
 				}
 			}
 		case key.Matches(msg, key.NewBinding(key.WithKeys("esc"))):
+			m.logger.Info("template_name_back_to_welcome")
 			return m, func() tea.Msg { return BackToWelcomeMsg{} }
 		case key.Matches(msg, key.NewBinding(key.WithKeys("ctrl+c"))):
+			m.logger.Info("template_name_quit")
 			return m, tea.Quit
 		}
 	}

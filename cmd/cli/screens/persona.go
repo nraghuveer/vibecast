@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nraghuveer/vibecast/cmd/cli/styles"
+	"github.com/nraghuveer/vibecast/lib/logger"
 )
 
 // PersonaModel represents the persona input screen
@@ -14,6 +15,7 @@ type PersonaModel struct {
 	width     int
 	height    int
 	persona   string
+	logger    *logger.Logger
 }
 
 // NewPersonaModel creates a new persona input screen model
@@ -24,6 +26,7 @@ func NewPersonaModel() PersonaModel {
 
 	return PersonaModel{
 		textInput: ti,
+		logger:    logger.GetInstance(),
 	}
 }
 
@@ -49,9 +52,11 @@ func (m PersonaModel) Update(msg tea.Msg) (PersonaModel, tea.Cmd) {
 		case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
 			if m.textInput.Value() != "" {
 				m.persona = m.textInput.Value()
+				m.logger.Info("persona_entered", "persona", m.persona)
 				return m, func() tea.Msg { return PersonaSelectedMsg{Persona: m.persona} }
 			}
 		case key.Matches(msg, key.NewBinding(key.WithKeys("ctrl+c"))):
+			m.logger.Info("persona_input_quit")
 			return m, tea.Quit
 		}
 	}

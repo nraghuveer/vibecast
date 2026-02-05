@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nraghuveer/vibecast/cmd/cli/styles"
 	"github.com/nraghuveer/vibecast/lib/config"
+	"github.com/nraghuveer/vibecast/lib/logger"
 )
 
 type ProviderInfo struct {
@@ -23,6 +24,7 @@ type ProviderModel struct {
 	selected  string
 	width     int
 	height    int
+	logger    *logger.Logger
 }
 
 func NewProviderModel() ProviderModel {
@@ -30,6 +32,7 @@ func NewProviderModel() ProviderModel {
 	return ProviderModel{
 		providers: providers,
 		cursor:    0,
+		logger:    logger.GetInstance(),
 	}
 }
 
@@ -80,8 +83,10 @@ func (m ProviderModel) Update(msg tea.Msg) (ProviderModel, tea.Cmd) {
 			}
 		case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
 			m.selected = m.providers[m.cursor].Name
+			m.logger.Info("provider_selected", "provider", m.selected)
 			return m, func() tea.Msg { return ProviderSelectedMsg{Provider: m.selected} }
 		case key.Matches(msg, key.NewBinding(key.WithKeys("ctrl+c"))):
+			m.logger.Info("provider_selection_quit")
 			return m, tea.Quit
 		}
 	}

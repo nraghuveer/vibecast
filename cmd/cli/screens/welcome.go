@@ -5,6 +5,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nraghuveer/vibecast/cmd/cli/styles"
+	"github.com/nraghuveer/vibecast/lib/logger"
 )
 
 // WelcomeOption represents a menu option on the welcome screen
@@ -23,6 +24,7 @@ type WelcomeModel struct {
 	height  int
 	cursor  int
 	options []string
+	logger  *logger.Logger
 }
 
 // NewWelcomeModel creates a new welcome screen model
@@ -35,6 +37,7 @@ func NewWelcomeModel() WelcomeModel {
 			"Quick start with preset",
 			"Create new template",
 		},
+		logger: logger.GetInstance(),
 	}
 }
 
@@ -60,10 +63,13 @@ func (m WelcomeModel) Update(msg tea.Msg) (WelcomeModel, tea.Cmd) {
 				m.cursor++
 			}
 		case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
+			selectedOption := m.options[m.cursor]
+			m.logger.Info("welcome_option_selected", "option", selectedOption, "index", m.cursor)
 			return m, func() tea.Msg {
 				return WelcomeOptionSelectedMsg{Option: WelcomeOption(m.cursor)}
 			}
 		case key.Matches(msg, key.NewBinding(key.WithKeys("q", "ctrl+c"))):
+			m.logger.Info("application_quit_from_welcome")
 			return m, tea.Quit
 		}
 	}

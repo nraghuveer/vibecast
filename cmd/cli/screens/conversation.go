@@ -3,7 +3,6 @@ package screens
 import (
 	"context"
 	"fmt"
-	"log"
 	"path/filepath"
 	"strings"
 	"time"
@@ -19,6 +18,7 @@ import (
 	"github.com/nraghuveer/vibecast/lib/config"
 	"github.com/nraghuveer/vibecast/lib/db"
 	"github.com/nraghuveer/vibecast/lib/llm"
+	"github.com/nraghuveer/vibecast/lib/logger"
 	"github.com/nraghuveer/vibecast/lib/models"
 	"github.com/nraghuveer/vibecast/lib/storage"
 )
@@ -59,6 +59,8 @@ type ConversationModel struct {
 	inputMode     string
 	isMuted       bool
 	sttDraft      string
+	logger        *logger.Logger
+	toastModel    ToastModel
 }
 
 // NewConversationModelWithTitle creates a new conversation screen model with a title
@@ -109,6 +111,8 @@ func NewConversationModelWithTitle(database *db.DB, title, topic, persona string
 		sttDraft:    "",
 		ttsQueue:    []string{},
 		llmClient:   llm.New(),
+		logger:      logger.GetInstance(),
+		toastModel:  NewToastModel(),
 	}
 }
 
@@ -154,6 +158,8 @@ func NewConversationModelFromExisting(database *db.DB, conversation db.Conversat
 		sttDraft:    "",
 		ttsQueue:    []string{},
 		llmClient:   llm.New(),
+		logger:      logger.GetInstance(),
+		toastModel:  NewToastModel(),
 	}
 }
 
@@ -252,10 +258,12 @@ func (m ConversationModel) Update(msg tea.Msg) (ConversationModel, tea.Cmd) {
 		stream, err := m.llmClient.StreamGuestResponse(ctx, m.provider, m.persona, m.topic, history)
 		if err != nil {
 			m.isTyping = false
+			m.logger.LogError("llm_stream_init", err)
+			m.toastModel.AddError("AI connection failed. Check your settings.")
 			notice := "Sorry—I'm having trouble connecting to the AI provider right now. Give me a moment and try again."
 			m.messages = append(m.messages, Message{Content: notice, Speaker: models.GUEST, Complete: true})
 			_ = storage.AppendMessage(m.id, "Guest", notice)
-			return m, nil
+			return m, DismissToastCmd(len(m.toastModel.GetToasts())-1, 5*time.Second)
 		}
 
 		m.llmStream = stream
@@ -271,10 +279,12 @@ func (m ConversationModel) Update(msg tea.Msg) (ConversationModel, tea.Cmd) {
 			}
 			m.resetLLMParser()
 
+			m.logger.LogError("llm_stream_error", msg.Event.Err)
+			m.toastModel.AddError("AI stream error. Please try again.")
 			notice := "Sorry—looks like I'm having trouble reaching the AI right now. Want to try that again in a second?"
 			m.messages = append(m.messages, Message{Content: notice, Speaker: models.GUEST, Complete: true})
 			_ = storage.AppendMessage(m.id, "Guest", notice)
-			return m, nil
+			return m, DismissToastCmd(len(m.toastModel.GetToasts())-1, 5*time.Second)
 		}
 
 		if msg.Event.Delta != "" {
@@ -323,16 +333,23 @@ func (m ConversationModel) Update(msg tea.Msg) (ConversationModel, tea.Cmd) {
 
 	case TTSSavedMsg:
 		if msg.Err != nil || msg.Filename == "" {
+			if msg.Err != nil {
+				m.logger.LogError("tts_save", msg.Err)
+			}
 			m.ttsInFlight = false
 			return m.startNextTTS()
 		}
 		if msg.Path != "" {
 			if err := audio.Enqueue(msg.Path); err != nil {
-				log.Printf("audio enqueue failed: %v", err)
+				m.logger.LogError("audio_enqueue", err)
 			}
 		}
 		m.ttsInFlight = false
 		return m.startNextTTS()
+
+	case ToastDismissMsg:
+		m.toastModel.RemoveToast(msg.Index)
+		return m, nil
 
 	case SttDraftMsg:
 		if m.inputMode == "voice" {
@@ -357,7 +374,9 @@ func (m ConversationModel) Update(msg tea.Msg) (ConversationModel, tea.Cmd) {
 				return m, nil
 			}
 		case key.Matches(msg, key.NewBinding(key.WithKeys("ctrl+c"))):
+			m.logger.Info("conversation_quit", "conversation_id", m.id)
 			m.cancelInflightLLM()
+			audio.Drain()
 			m.EndConversation()
 			return m, tea.Quit
 		case key.Matches(msg, key.NewBinding(key.WithKeys("ctrl+i"))):
@@ -366,6 +385,7 @@ func (m ConversationModel) Update(msg tea.Msg) (ConversationModel, tea.Cmd) {
 		case key.Matches(msg, key.NewBinding(key.WithKeys("q"))):
 			if !m.isTyping && m.textInput.Value() == "" {
 				m.cancelInflightLLM()
+				audio.Drain()
 				m.EndConversation()
 				return m, tea.Quit
 			}
@@ -373,12 +393,15 @@ func (m ConversationModel) Update(msg tea.Msg) (ConversationModel, tea.Cmd) {
 			if !m.isTyping && m.textInput.Value() != "" {
 				// Add host message
 				hostMsg := m.textInput.Value()
+				m.logger.Info("host_message_sent", "conversation_id", m.id, "message_length", len(hostMsg))
 				m.messages = append(m.messages, Message{
 					Content:  hostMsg,
 					Speaker:  models.HOST,
 					Complete: true,
 				})
-				storage.AppendMessage(m.id, "Host", hostMsg)
+				if err := storage.AppendMessage(m.id, "Host", hostMsg); err != nil {
+					m.logger.LogError("storage_append_message", err)
+				}
 				m.textInput.Reset()
 				return m, m.startGuestResponse(false)
 			}
@@ -560,11 +583,11 @@ func (m ConversationModel) ttsCmd(text string) tea.Cmd {
 		defer cancel()
 
 		cleanText := normalizeTTSInput(text)
-		audio, _, err := client.SynthesizeGuestSpeech(ctx, "", ttsProvider, persona, topic, voiceID, cleanText)
+		audioData, _, err := client.SynthesizeGuestSpeech(ctx, "", ttsProvider, persona, topic, voiceID, cleanText)
 		if err != nil {
 			return TTSSavedMsg{Err: err}
 		}
-		filename, err := storage.SaveAudio(conversationID, audio)
+		filename, err := storage.SaveAudio(conversationID, audioData)
 		if err != nil {
 			return TTSSavedMsg{Err: err}
 		}
@@ -763,7 +786,27 @@ func (m ConversationModel) dotAnimationCmd() tea.Cmd {
 
 // View renders the conversation screen
 func (m ConversationModel) View() string {
-	return m.renderConversation()
+	mainContent := m.renderConversation()
+
+	// Render toasts in upper left if any
+	if m.toastModel.HasToasts() {
+		toasts := RenderToasts(m.toastModel.GetToasts())
+		if toasts != "" {
+			// Position toasts at the top with proper spacing
+			toastContainer := lipgloss.NewStyle().
+				Padding(1, 2).
+				Render(toasts)
+
+			// Overlay toasts on top of main content
+			return lipgloss.JoinVertical(
+				lipgloss.Left,
+				toastContainer,
+				mainContent,
+			)
+		}
+	}
+
+	return mainContent
 }
 
 // Pre-rendered animation frames
@@ -985,8 +1028,13 @@ func (m ConversationModel) ID() string {
 
 // EndConversation marks the conversation as ended
 func (m ConversationModel) EndConversation() error {
+	m.logger.Info("conversation_ended", "conversation_id", m.id)
 	now := time.Now()
-	return m.db.UpdateConversationEndedAt(m.id, now)
+	err := m.db.UpdateConversationEndedAt(m.id, now)
+	if err != nil {
+		m.logger.LogError("conversation_end", err)
+	}
+	return err
 }
 
 // ExitConversationMsg signals to exit the conversation

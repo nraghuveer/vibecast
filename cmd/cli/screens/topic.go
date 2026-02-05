@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nraghuveer/vibecast/cmd/cli/styles"
+	"github.com/nraghuveer/vibecast/lib/logger"
 )
 
 // TopicModel represents the topic input screen
@@ -14,6 +15,7 @@ type TopicModel struct {
 	width     int
 	height    int
 	topic     string
+	logger    *logger.Logger
 }
 
 // NewTopicModel creates a new topic input screen model
@@ -24,6 +26,7 @@ func NewTopicModel() TopicModel {
 
 	return TopicModel{
 		textInput: ti,
+		logger:    logger.GetInstance(),
 	}
 }
 
@@ -49,9 +52,11 @@ func (m TopicModel) Update(msg tea.Msg) (TopicModel, tea.Cmd) {
 		case key.Matches(msg, key.NewBinding(key.WithKeys("enter"))):
 			if m.textInput.Value() != "" {
 				m.topic = m.textInput.Value()
+				m.logger.Info("topic_entered", "topic", m.topic)
 				return m, func() tea.Msg { return TopicSelectedMsg{Topic: m.topic} }
 			}
 		case key.Matches(msg, key.NewBinding(key.WithKeys("ctrl+c"))):
+			m.logger.Info("topic_input_quit")
 			return m, tea.Quit
 		}
 	}
